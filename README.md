@@ -19,6 +19,19 @@ Por enquanto roda no Windows. O código de inicialização automática já cobre
 
 ## Instalação (Windows)
 
+Baixe o instalador na página de [Releases](https://github.com/berlotto/painel-led-auxiliar/releases/latest) (`painel-led-X.Y.Z-instalador.exe`) e execute.
+- Não precisa de administrador: instala em `%LOCALAPPDATA%\Programs\painel-led`.
+- Cria o atalho no Menu Iniciar e pergunta se o painel deve iniciar com o Windows.
+- Para remover, use Configurações → Aplicativos.
+
+Prefere sem instalar? Baixe o `.zip` portátil, descompacte e abra `painel-led.exe`.
+
+O executável não é assinado. Na primeira vez, o SmartScreen pode avisar: clique em **Mais informações → Executar assim mesmo**.
+
+Depois de instalar, abra as configurações (clique direito no painel) e use a aba **Conectar ao Claude** para ligar o MCP, os hooks e a statusline.
+
+### Compilar do código
+
 Precisa do [Rust](https://rustup.rs) 1.85 ou mais novo (edição 2024) e das Build Tools do Visual Studio.
 
 ```powershell
@@ -37,6 +50,19 @@ Antes de mexer no `claude_desktop_config.json`, ele faz uma cópia `.bak-painel-
 
 - Para só atualizar os executáveis, sem tocar na configuração do Claude: `pwsh -File install.ps1 -SemMcp`.
 - Para desenvolver: `cargo run --release`.
+
+### Publicar uma versão
+
+O workflow [`.github/workflows/windows.yml`](.github/workflows/windows.yml) compila no Windows, roda os testes e gera o instalador (Inno Setup, script em `installer/painel-led.iss`) e o zip portátil.
+
+Para publicar:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+Cada push de tag `v*` cria uma Release com os dois arquivos. Um push na `main` só gera os arquivos como artefato do workflow, sem Release.
 
 ## Uso
 
