@@ -15,11 +15,15 @@ Quando uma sessão do Claude Code pede permissão, o aviso pisca e passa na fren
 
 É escrito em Rust e desenha em software (winit + softbuffer, sem GPU). Usa uns 12 MB de memória privada e quase nada de CPU quando o texto está parado.
 
-Por enquanto roda no Windows. O código de inicialização automática já cobre Linux e macOS, mas o empacotamento para eles ainda não foi feito.
+Roda no Windows e no Linux. O macOS ainda não tem pacote.
 
-## Instalação (Windows)
+## Instalação
 
-Baixe o instalador na página de [Releases](https://github.com/berlotto/painel-led-auxiliar/releases/latest) (`painel-led-X.Y.Z-instalador.exe`) e execute.
+Os arquivos ficam na página de [Releases](https://github.com/berlotto/painel-led-auxiliar/releases/latest).
+
+### Windows
+
+Baixe `painel-led-X.Y.Z-windows-instalador.exe` e execute.
 - Não precisa de administrador: instala em `%LOCALAPPDATA%\Programs\painel-led`.
 - Cria o atalho no Menu Iniciar e pergunta se o painel deve iniciar com o Windows.
 - Para remover, use Configurações → Aplicativos.
@@ -28,11 +32,41 @@ Prefere sem instalar? Baixe o `.zip` portátil, descompacte e abra `painel-led.e
 
 O executável não é assinado. Na primeira vez, o SmartScreen pode avisar: clique em **Mais informações → Executar assim mesmo**.
 
-Depois de instalar, abra as configurações (clique direito no painel) e use a aba **Conectar ao Claude** para ligar o MCP, os hooks e a statusline.
+### Linux
+
+No Ubuntu, Debian, Mint ou Pop!_OS, baixe o `.deb` e instale:
+
+```bash
+sudo apt install ./painel-led_X.Y.Z_amd64.deb
+```
+
+Em outras distribuições, baixe o `.tar.gz`, descompacte e rode `./install.sh`. Ele instala em `~/.local`, sem root, e `./install.sh --remover` desfaz.
+
+O pacote precisa de GTK 3 e de `libayatana-appindicator3` (ou `libappindicator3`); o `.deb` já puxa as duas.
+
+O que muda no Linux:
+- No Wayland, o painel abre via XWayland. O Wayland não deixa uma janela se posicionar sozinha nem ficar sempre no topo; pelo XWayland as duas coisas funcionam. Para forçar o Wayland nativo, rode com `PAINEL_LED_WAYLAND=1`.
+- O ícone na bandeja usa AppIndicator. No GNOME, isso depende da extensão AppIndicator, que já vem no Ubuntu. Sem bandeja, o painel funciona do mesmo jeito: o clique direito abre as configurações.
+- A tela de configurações abre em modo app do Chrome, Chromium, Edge ou Brave, se houver algum; senão, no navegador padrão.
+- A posição "base" usa a altura total do monitor e pode ficar atrás de um dock ou painel do sistema. Nesse caso, use "topo" ou "livre".
+- O Claude Desktop não tem versão oficial para Linux; o MCP funciona no Claude Code.
+
+### Depois de instalar
+
+Abra as configurações (clique direito no painel) e use a aba **Conectar ao Claude** para ligar o MCP, os hooks e a statusline.
 
 ### Compilar do código
 
-Precisa do [Rust](https://rustup.rs) 1.85 ou mais novo (edição 2024) e das Build Tools do Visual Studio.
+No Linux, instale antes as bibliotecas de desenvolvimento e use o `cargo`:
+
+```bash
+sudo apt install libgtk-3-dev libayatana-appindicator3-dev libxdo-dev
+cargo build --release
+```
+
+No Windows:
+
+precisa do [Rust](https://rustup.rs) 1.85 ou mais novo (edição 2024) e das Build Tools do Visual Studio.
 
 ```powershell
 git clone git@github.com:berlotto/painel-led-auxiliar.git
@@ -53,7 +87,9 @@ Antes de mexer no `claude_desktop_config.json`, ele faz uma cópia `.bak-painel-
 
 ### Publicar uma versão
 
-O workflow [`.github/workflows/windows.yml`](.github/workflows/windows.yml) compila no Windows, roda os testes e gera o instalador (Inno Setup, script em `installer/painel-led.iss`) e o zip portátil.
+O workflow [`.github/workflows/build.yml`](.github/workflows/build.yml) compila e roda os testes no Windows e no Linux. Ele gera:
+- o instalador do Windows (Inno Setup, script em `installer/painel-led.iss`) e o zip portátil;
+- o `.deb` (`cargo deb`, configurado no `Cargo.toml`) e o `.tar.gz`. O Linux é compilado no Ubuntu 22.04, para o binário rodar também em distribuições mais antigas.
 
 Para publicar:
 
@@ -62,7 +98,7 @@ git tag v0.2.0
 git push origin v0.2.0
 ```
 
-Cada push de tag `v*` cria uma Release com os dois arquivos. Um push na `main` só gera os arquivos como artefato do workflow, sem Release.
+Cada push de tag `v*` cria uma Release com os quatro arquivos. Um push na `main` só gera os arquivos como artefato do workflow, sem Release.
 
 ## Uso
 
@@ -73,7 +109,7 @@ Cada push de tag `v*` cria uma Release com os dois arquivos. Um push na `main` s
 | Descartar as mensagens | duplo clique |
 | Fechar | o `×` que aparece no canto ao passar o mouse, ou Sair na bandeja |
 
-O ícone na bandeja tem: Configurações, Mostrar/Ocultar, Limpar mensagens, Iniciar com o Windows, Editar arquivo de configuração e Sair.
+O ícone na bandeja tem: Configurações, Mostrar/Ocultar, Limpar mensagens, Iniciar com o sistema, Editar arquivo de configuração e Sair.
 
 Se você soltar o painel em outro monitor, ele recalcula a largura para esse monitor.
 
@@ -102,7 +138,7 @@ Na aba Conteúdo você monta cada linha em blocos lado a lado. Cada bloco mostra
 
 No efeito fixo, um texto que não cabe no bloco rola. O item `limites` se adapta antes de rolar: se faltar espaço, tira as barrinhas e depois o horário de renovação.
 
-Tudo fica em `%APPDATA%\painel-led\config.toml`, e dá para editar o arquivo à mão. O painel recarrega ao salvar. Se houver erro de sintaxe, mostra o erro piscando e continua com a configuração anterior.
+Tudo fica em `config.toml`, na pasta `%APPDATA%\painel-led` (Windows) ou `~/.config/painel-led` (Linux), e dá para editar o arquivo à mão. O painel recarrega ao salvar. Se houver erro de sintaxe, mostra o erro piscando e continua com a configuração anterior.
 
 ```toml
 [painel]
@@ -142,7 +178,7 @@ Eventos recorrentes, exceções e cancelamentos são tratados. Os avisos:
 
 ### Internet
 
-Não há teste de velocidade. A cada 30 s o painel abre uma conexão TCP com 1.1.1.1 e 8.8.8.8 para saber se está online e qual a latência. Ele guarda as últimas 24 h em `%APPDATA%\painel-led\pings.json`.
+Não há teste de velocidade. A cada 30 s o painel abre uma conexão TCP com 1.1.1.1 e 8.8.8.8 para saber se está online e qual a latência. Ele guarda as últimas 24 h em `pings.json`, na pasta de dados (`%APPDATA%\painel-led` ou `~/.local/share/painel-led`).
 
 ## Claude
 
@@ -227,7 +263,8 @@ A API só aceita chamadas da própria máquina:
 ## Estrutura
 
 ```
-src/main.rs           janela, desenho dos LEDs, bandeja, mouse
+src/main.rs           janela, desenho dos LEDs, mouse
+src/tray.rs           ícone na bandeja (no Linux, numa thread com GTK)
 src/render.rs         monta cada quadro a partir da configuração e do estado
 src/font.rs           fonte 5x7 com acentos
 src/sources.rs        CPU/RAM, pings, servidor HTTP
