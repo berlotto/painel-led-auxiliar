@@ -1,0 +1,876 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Painel LED · Configurações</title>
+<style>
+  :root {
+    --bg: #0d0e10; --card: #16181c; --card2: #1d2026; --line: #2a2e36;
+    --text: #e8e9ec; --muted: #9097a3; --amber: #ffb000; --amber-d: #4a3a10;
+    --green: #3cff5a; --red: #ff5048; --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif; }
+  header { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 14px;
+    padding: 14px 24px; background: rgba(13,14,16,.92); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); }
+  .logo { display: grid; grid-template-columns: repeat(5, 5px); gap: 2px; }
+  .logo i { width: 5px; height: 5px; border-radius: 50%; background: #2a2a2a; }
+  .logo i.on { background: var(--amber); box-shadow: 0 0 4px var(--amber); }
+  header h1 { font-size: 17px; margin: 0; font-weight: 600; }
+  #status { margin-left: auto; font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  #status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  #status.ok .dot { background: var(--green); } #status.err { color: var(--red); } #status.err .dot { background: var(--red); }
+  #status.busy .dot { background: var(--amber); }
+  main { max-width: 920px; margin: 0 auto; padding: 20px 24px 60px; }
+  nav { display: flex; gap: 6px; margin-bottom: 18px; flex-wrap: wrap; }
+  nav button { background: none; border: 1px solid var(--line); color: var(--muted); padding: 7px 14px;
+    border-radius: 999px; cursor: pointer; font: inherit; }
+  nav button.active { background: var(--amber); color: #111; border-color: var(--amber); font-weight: 600; }
+  section { display: none; } section.active { display: block; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px 20px; margin-bottom: 16px; }
+  .card h2 { margin: 0 0 4px; font-size: 15px; } .card > p.sub { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+  .row { display: grid; grid-template-columns: 210px 1fr; gap: 16px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+  .row:first-of-type { border-top: none; }
+  @media (max-width: 640px) { .row { grid-template-columns: 1fr; gap: 6px; } }
+  label.lbl { display: flex; align-items: center; gap: 6px; font-weight: 500; }
+  .tip { position: relative; display: inline-flex; width: 17px; height: 17px; border-radius: 50%;
+    align-items: center; justify-content: center; font-size: 11px; font-weight: 700; cursor: help;
+    background: var(--card2); color: var(--muted); border: 1px solid var(--line); flex: none; }
+  .tip:hover { color: var(--amber); border-color: var(--amber); }
+  .tip::after { content: attr(data-tip); position: absolute; left: 50%; bottom: calc(100% + 8px); transform: translateX(-50%);
+    width: max-content; max-width: 300px; white-space: normal; background: #000; color: var(--text); border: 1px solid var(--line);
+    padding: 8px 10px; border-radius: 8px; font-size: 12.5px; font-weight: 400; line-height: 1.4; text-align: left;
+    opacity: 0; pointer-events: none; transition: opacity .12s; z-index: 50; box-shadow: 0 6px 20px rgba(0,0,0,.5); }
+  .tip:hover::after { opacity: 1; }
+  .tip.right::after { left: 0; transform: none; }
+  input[type=text], input[type=number], select, textarea {
+    background: var(--card2); color: var(--text); border: 1px solid var(--line); border-radius: 8px;
+    padding: 7px 10px; font: inherit; outline: none; }
+  input:focus, select:focus, textarea:focus { border-color: var(--amber); }
+  input[type=number] { width: 90px; }
+  textarea { width: 100%; min-height: 70px; resize: vertical; font-family: Consolas, monospace; font-size: 12.5px; }
+  .slider { display: flex; align-items: center; gap: 12px; }
+  .slider input[type=range] { flex: 1; accent-color: var(--amber); }
+  .slider output { min-width: 58px; text-align: right; font-variant-numeric: tabular-nums; color: var(--amber); }
+  .seg { display: inline-flex; background: var(--card2); border: 1px solid var(--line); border-radius: 9px; padding: 3px; gap: 2px; flex-wrap: wrap; }
+  .seg button { border: none; background: none; color: var(--muted); padding: 6px 12px; border-radius: 7px; cursor: pointer; font: inherit; }
+  .seg button.on { background: var(--amber); color: #111; font-weight: 600; }
+  .choices { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .choice { border: 1px solid var(--line); background: var(--card2); border-radius: 10px; padding: 10px; cursor: pointer; text-align: left; color: var(--text); font: inherit; }
+  .choice.on { border-color: var(--amber); box-shadow: 0 0 0 1px var(--amber) inset; }
+  .choice b { display: block; margin-bottom: 2px; } .choice small { color: var(--muted); }
+  .scr { height: 34px; border: 1px solid #444; border-radius: 4px; position: relative; margin-bottom: 8px; background: #111; }
+  .scr::after { content: ""; position: absolute; left: 22%; right: 22%; height: 6px; background: var(--amber); border-radius: 2px; }
+  .scr.topo::after { top: 2px; } .scr.base::after { bottom: 6px; } .scr.livre::after { top: 12px; left: 35%; right: 15%; }
+  .scr.base::before { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: #333; }
+  .btn { background: var(--card2); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 7px 13px; cursor: pointer; font: inherit; }
+  .btn:hover { border-color: #444a55; } .btn.primary { background: var(--amber); color: #111; border-color: var(--amber); font-weight: 600; }
+  .btn.danger:hover { border-color: var(--red); color: var(--red); } .btn.small { padding: 4px 9px; font-size: 12.5px; }
+  .line-card { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 12px; background: #121418; }
+  .line-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .line-head h3 { margin: 0; font-size: 14px; } .line-head .tag { font-size: 11.5px; color: var(--amber); border: 1px solid var(--amber-d); padding: 1px 8px; border-radius: 99px; }
+  .strip { display: flex; gap: 3px; height: 10px; margin-bottom: 10px; }
+  .strip div { border-radius: 3px; background: var(--amber-d); } .strip div.flex { background: repeating-linear-gradient(90deg, var(--amber-d) 0 6px, #2c2410 6px 10px); }
+  .blocks { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+  .block { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .block-head { display: flex; align-items: center; gap: 6px; } .block-head b { flex: 1; font-size: 13px; }
+  .chips { display: flex; flex-direction: column; gap: 6px; }
+  .chip { display: flex; align-items: center; gap: 6px; background: var(--card2); border: 1px solid var(--line); border-radius: 8px; padding: 5px 6px 5px 10px; }
+  .chip span { flex: none; font-size: 13px; } .chip input { flex: 1; min-width: 0; padding: 4px 8px; }
+  .chip .x, .icon { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 15px; padding: 2px 5px; border-radius: 5px; line-height: 1; }
+  .chip .x:hover, .icon:hover { color: var(--text); background: #2a2e36; }
+  .field { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; } .field > label { font-size: 12.5px; color: var(--muted); min-width: 62px; display: flex; gap: 5px; align-items: center; }
+  .swatches { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
+  .sw { width: 20px; height: 20px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }
+  .sw.on { border-color: #fff; } .sw.none { background: conic-gradient(#ffb000, #3cff5a, #00dcff, #ff3cdc, #ffb000); opacity: .55; }
+  input[type=color] { width: 24px; height: 24px; padding: 0; border: none; background: none; cursor: pointer; }
+  .muted { color: var(--muted); font-size: 12.5px; }
+  .switch { position: relative; width: 44px; height: 24px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch span { position: absolute; inset: 0; background: var(--card2); border: 1px solid var(--line); border-radius: 99px; cursor: pointer; transition: .15s; }
+  .switch span::before { content: ""; position: absolute; width: 18px; height: 18px; left: 2px; top: 2px; border-radius: 50%; background: var(--muted); transition: .15s; }
+  .switch input:checked + span { background: var(--amber); border-color: var(--amber); }
+  .switch input:checked + span::before { transform: translateX(20px); background: #111; }
+  .switch input:disabled + span { opacity: .5; cursor: wait; }
+  .warn { color: var(--amber); font-size: 12.5px; margin-top: 6px; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 3px 10px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+  .badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+  .badge.on { color: var(--green); border-color: #1f5a2a; } .badge.on::before { background: var(--green); }
+  .badge.off { color: var(--amber); border-color: var(--amber-d); } .badge.off::before { background: var(--amber); }
+  .sess { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+  .sess > span { font-size: 12.5px; padding: 4px 10px; border-radius: 6px; background: var(--card2); border: 1px solid var(--line); }
+  .sess .trabalhando { color: #00dcff; } .sess .precisa_de_voce { color: var(--amber); border-color: var(--amber); }
+  .sess .concluida { color: var(--green); } .sess .esperando { color: var(--amber); } .sess .aberta { color: var(--muted); }
+  .sess small { color: var(--muted); margin-left: 4px; }
+  .bar { display: inline-block; width: 120px; height: 8px; border-radius: 4px; background: var(--card2); border: 1px solid var(--line); vertical-align: middle; margin: 0 8px; overflow: hidden; }
+  .bar i { display: block; height: 100%; }
+  .integ { display: grid; grid-template-columns: 1fr auto; gap: 6px 14px; align-items: center; padding: 14px 0; border-top: 1px solid var(--line); }
+  .integ:first-of-type { border-top: none; }
+  .integ h3 { margin: 0; font-size: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .integ p { margin: 0; grid-column: 1 / -1; color: var(--muted); font-size: 13px; }
+  .integ .actions { display: flex; gap: 6px; }
+  details { margin-top: 8px; } summary { cursor: pointer; color: var(--muted); font-size: 13px; user-select: none; }
+  summary:hover { color: var(--text); }
+  .code { position: relative; background: #0a0b0d; border: 1px solid var(--line); border-radius: 8px; padding: 10px 44px 10px 12px; margin: 8px 0;
+    font-family: Consolas, "Cascadia Mono", monospace; font-size: 12.5px; white-space: pre-wrap; word-break: break-all; color: #d6d9df; }
+  .code .copy { position: absolute; top: 6px; right: 6px; }
+  table.api { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.api td, table.api th { text-align: left; padding: 7px 8px; border-top: 1px solid var(--line); vertical-align: top; }
+  table.api th { color: var(--muted); font-weight: 500; border-top: none; }
+  table.api td:first-child { white-space: nowrap; font-family: Consolas, monospace; color: var(--amber); }
+  .tools { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
+  .tool { background: var(--card2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .tool b { font-family: Consolas, monospace; color: var(--amber); font-size: 13px; } .tool p { margin: 4px 0 6px; font-size: 13px; color: var(--muted); }
+  .tool i { font-size: 12.5px; color: var(--text); font-style: normal; } .tool i::before { content: "💬 "; }
+  .steps { margin: 8px 0 0; padding-left: 20px; color: var(--muted); font-size: 13px; } .steps b { color: var(--text); }
+  .footer-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  code { background: var(--card2); padding: 1px 6px; border-radius: 5px; font-size: 12.5px; }
+  #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: #000; border: 1px solid var(--line);
+    padding: 10px 16px; border-radius: 10px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 90vw; }
+  #toast.show { opacity: 1; } #toast.warn { border-color: var(--amber); } #toast.err { border-color: var(--red); }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo" aria-hidden="true">
+    <i class="on"></i><i></i><i class="on"></i><i></i><i class="on"></i>
+    <i></i><i class="on"></i><i></i><i class="on"></i><i></i>
+    <i class="on"></i><i></i><i class="on"></i><i></i><i class="on"></i>
+  </div>
+  <h1>Painel LED · Configurações</h1>
+  <div id="status"><span class="dot"></span><span id="status-text">Carregando…</span></div>
+</header>
+
+<main>
+  <nav id="tabs">
+    <button data-tab="painel" class="active">Painel</button>
+    <button data-tab="conteudo">Conteúdo</button>
+    <button data-tab="agenda">Agenda</button>
+    <button data-tab="testar">Testar</button>
+    <button data-tab="conectar">Conectar ao Claude</button>
+    <button data-tab="avancado">Avançado</button>
+  </nav>
+
+  <!-- ===================== PAINEL ===================== -->
+  <section id="tab-painel" class="active">
+    <div class="card">
+      <h2>Tamanho e posição</h2>
+      <p class="sub">As alterações aparecem no painel na hora.</p>
+
+      <div class="row">
+        <label class="lbl">Largura <span class="tip" data-tip="Quanto do monitor o painel ocupa. Em % ele acompanha o monitor onde está: se você arrastar para outro monitor, recalcula.">?</span></label>
+        <div>
+          <div class="seg" id="width-mode">
+            <button data-v="pct">% do monitor</button>
+            <button data-v="px">Pixels</button>
+          </div>
+          <div class="slider" id="width-pct-box" style="margin-top:10px">
+            <input type="range" id="width-pct" min="10" max="100" step="5"><output id="width-pct-out"></output>
+          </div>
+          <div id="width-px-box" style="margin-top:10px; display:none">
+            <input type="number" id="width-px" min="200" max="8000" step="10"> <span class="muted">pixels</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="row">
+        <label class="lbl">Linhas de texto <span class="tip" data-tip="Quantas linhas de letreiro empilhadas. Cada linha tem 7 LEDs de altura e seu próprio conteúdo (aba Conteúdo).">?</span></label>
+        <div class="seg" id="lines"></div>
+      </div>
+
+      <div class="row">
+        <label class="lbl">Tamanho do LED <span class="tip" data-tip="Distância entre os pontos, em pixels. Maior = letras maiores e painel mais alto.">?</span></label>
+        <div class="slider"><input type="range" id="led" min="3" max="24" step="1"><output id="led-out"></output></div>
+      </div>
+
+      <div class="row" style="align-items:start">
+        <label class="lbl">Posição <span class="tip" data-tip="Topo/Base: fica centralizado e encaixado na borda do monitor onde o painel estiver. Livre: você arrasta para onde quiser e a posição é lembrada.">?</span></label>
+        <div class="choices" id="position">
+          <button class="choice" data-v="topo"><div class="scr topo"></div><b>Topo</b><small>Colado no alto da tela</small></button>
+          <button class="choice" data-v="base"><div class="scr base"></div><b>Base</b><small>Logo acima da barra de tarefas</small></button>
+          <button class="choice" data-v="livre"><div class="scr livre"></div><b>Livre</b><small>Arraste para onde quiser</small></button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Aparência</h2>
+      <p class="sub">Velocidade, brilho e onde as mensagens aparecem.</p>
+      <div class="row">
+        <label class="lbl">Velocidade de rolagem <span class="tip" data-tip="Quantas colunas de LED o texto anda por segundo quando está rolando.">?</span></label>
+        <div class="slider"><input type="range" id="speed" min="5" max="90" step="1"><output id="speed-out"></output></div>
+      </div>
+      <div class="row">
+        <label class="lbl">Brilho <span class="tip" data-tip="Intensidade dos LEDs acesos. Útil à noite.">?</span></label>
+        <div class="slider"><input type="range" id="bright" min="10" max="100" step="5"><output id="bright-out"></output></div>
+      </div>
+      <div class="row">
+        <label class="lbl">Linha das mensagens <span class="tip" data-tip="Mensagens do Claude, avisos da agenda e da API ocupam esta linha inteira enquanto aparecem; depois ela volta ao normal.">?</span></label>
+        <div class="seg" id="msgline"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Sistema</h2>
+      <p class="sub">Comportamento do aplicativo no computador.</p>
+      <div class="row">
+        <label class="lbl"><span id="autostart-label">Iniciar com o Windows</span> <span class="tip" data-tip="Abre o painel automaticamente quando você entra no computador. Não precisa de administrador e pode ser desligado a qualquer momento (também pelo ícone na bandeja).">?</span></label>
+        <div>
+          <div class="field">
+            <label class="switch"><input type="checkbox" id="autostart"><span></span></label>
+            <span class="muted" id="autostart-state">…</span>
+          </div>
+          <div class="warn" id="autostart-warn" style="display:none"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== CONTEÚDO ===================== -->
+  <section id="tab-conteudo">
+    <div class="card">
+      <h2>O que cada linha mostra</h2>
+      <p class="sub">Cada linha é dividida em <b>blocos</b> lado a lado. Um bloco mostra seus itens um de cada vez, com o efeito escolhido.</p>
+      <div id="lines-editor"></div>
+    </div>
+  </section>
+
+  <!-- ===================== AGENDA ===================== -->
+  <section id="tab-agenda">
+    <div class="card">
+      <h2>Google Agenda (ou qualquer calendário iCal)</h2>
+      <p class="sub">Mostra os próximos compromissos (item <b>Agenda</b>) e avisa piscando antes de começarem.</p>
+      <div class="row" style="align-items:start">
+        <label class="lbl">Endereços iCal <span class="tip" data-tip="Um endereço por linha. Também aceita webcal:// e o caminho de um arquivo .ics no computador. O endereço secreto dá acesso de leitura à sua agenda: não compartilhe.">?</span></label>
+        <div>
+          <textarea id="urls" placeholder="https://calendar.google.com/calendar/ical/.../basic.ics" spellcheck="false"></textarea>
+          <ol class="steps">
+            <li>Abra o <b>Google Agenda</b> no navegador → ⚙ <b>Configurações</b>.</li>
+            <li>Na lateral, em <b>Configurações das minhas agendas</b>, clique na agenda.</li>
+            <li>Role até <b>Integrar agenda</b> → copie o <b>Endereço secreto no formato iCal</b>.</li>
+          </ol>
+        </div>
+      </div>
+      <div class="row">
+        <label class="lbl">Avisar antes <span class="tip" data-tip="Minutos antes do início em que o painel pisca um aviso. 0 = na hora em que começa. Ex.: 15, 5, 0">?</span></label>
+        <div class="field"><input type="text" id="alerts" style="width:160px" placeholder="10, 0"> <span class="muted">minutos, separados por vírgula</span></div>
+      </div>
+      <div class="row">
+        <label class="lbl">Atualizar a cada <span class="tip" data-tip="De quanto em quanto tempo o painel baixa a agenda de novo. A troca de endereço é aplicada na hora.">?</span></label>
+        <div class="field"><input type="number" id="refresh" min="1" max="1440"> <span class="muted">minutos</span></div>
+      </div>
+      <div class="row">
+        <label class="lbl">Situação</label>
+        <div id="agenda-status" class="muted">—</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== TESTAR ===================== -->
+  <section id="tab-testar">
+    <div class="card">
+      <h2>Mandar uma mensagem de teste</h2>
+      <p class="sub">Aparece na linha das mensagens. É assim que o Claude, scripts e a agenda conversam com o painel.</p>
+      <div class="row"><label class="lbl">Texto</label><input type="text" id="t-text" value="Olá! Painel funcionando 🙂"></div>
+      <div class="row">
+        <label class="lbl">Efeito <span class="tip" data-tip="Rolar: passa pelo painel. Fixo: fica parado alguns segundos. Piscar: alerta; fura a fila e a moldura pisca junto.">?</span></label>
+        <div class="seg" id="t-effect"><button data-v="rolar" class="on">Rolar</button><button data-v="fixo">Fixo</button><button data-v="piscar">Piscar (alerta)</button></div>
+      </div>
+      <div class="row"><label class="lbl">Cor</label><div class="swatches" id="t-color"></div></div>
+      <div class="row">
+        <label class="lbl">Quando <span class="tip" data-tip="Agora, ou como lembrete daqui a alguns minutos.">?</span></label>
+        <div class="field"><input type="number" id="t-delay" min="0" max="1440" value="0"> <span class="muted">minutos (0 = agora)</span></div>
+      </div>
+      <div class="footer-actions">
+        <button class="btn primary" id="t-send">Enviar ao painel</button>
+        <button class="btn" id="t-clear">Limpar mensagens</button>
+      </div>
+      <p class="muted" style="margin-top:14px">Pela linha de comando:<br>
+        <code>curl -X POST "http://127.0.0.1:7878/mensagem?efeito=piscar&cor=vermelho" --data "Servidor fora do ar"</code></p>
+    </div>
+  </section>
+
+  <!-- ===================== CONECTAR ===================== -->
+  <section id="tab-conectar">
+    <div class="card">
+      <h2>Claude (MCP)</h2>
+      <p class="sub">Com o MCP conectado, o Claude ganha ferramentas para escrever no painel: avisos, alertas, lembretes e status.
+        Ele usa quando você pedir ("me avisa no painel quando…") ou quando fizer sentido durante uma tarefa.</p>
+
+      <div class="integ">
+        <h3>Claude Code <span class="badge" id="b-code">…</span>
+          <span class="tip" data-tip="Vale para o terminal (CLI), as extensões do VS Code / JetBrains e a aba Code do app Claude Desktop. O registro é feito no escopo do usuário: funciona em qualquer projeto.">?</span></h3>
+        <div class="actions"><button class="btn primary small" id="code-on">Conectar</button><button class="btn danger small" id="code-off">Remover</button></div>
+        <p id="code-note">As próximas sessões do Claude Code já terão as ferramentas do painel.</p>
+      </div>
+
+      <div class="integ">
+        <h3>Claude Desktop (chat) <span class="badge" id="b-desktop">…</span>
+          <span class="tip" data-tip="Adiciona o painel em mcpServers no claude_desktop_config.json (com backup do arquivo anterior). Depois, feche e abra o Claude Desktop.">?</span></h3>
+        <div class="actions"><button class="btn primary small" id="desk-on">Conectar</button><button class="btn danger small" id="desk-off">Remover</button></div>
+        <p>Depois de conectar, <b>feche e abra o Claude Desktop</b> (inclusive pela bandeja) para ele carregar o painel.</p>
+      </div>
+
+      <details>
+        <summary>Configuração manual (outros clientes MCP, ou se preferir fazer à mão)</summary>
+        <p class="muted" style="margin:10px 0 0">Claude Code, num terminal:</p>
+        <div class="code" id="manual-code"></div>
+        <p class="muted" style="margin:10px 0 0">Claude Desktop e outros clientes: adicione em <code>mcpServers</code> no arquivo de configuração
+          (<span id="desk-file">…</span>):</p>
+        <div class="code" id="manual-json"></div>
+        <p class="muted">O servidor MCP fala via <b>stdio</b>. Se o painel estiver fechado, ele abre o painel sozinho.</p>
+      </details>
+    </div>
+
+    <div class="card">
+      <h2>O que o Claude pode fazer no painel</h2>
+      <p class="sub">Ferramentas que o MCP oferece, e exemplos de pedidos.</p>
+      <div class="tools">
+        <div class="tool"><b>mostrar_mensagem</b><p>Aviso curto com cor e efeito (rolar, fixo ou piscar).</p><i>Mostra no painel "deploy concluído" em verde</i></div>
+        <div class="tool"><b>alerta</b><p>Pisca e passa na frente das outras mensagens.</p><i>Se os testes falharem, me alerta no painel</i></div>
+        <div class="tool"><b>lembrete</b><p>Aparece piscando daqui a N minutos.</p><i>Me lembra em 25 min de fazer uma pausa</i></div>
+        <div class="tool"><b>definir_texto</b><p>Texto contínuo nos blocos <code>var:NOME</code> (aba Conteúdo → "Texto via API").</p><i>Deixa no painel em que tarefa você está trabalhando</i></div>
+        <div class="tool"><b>limpar_mensagens</b><p>Descarta mensagens e lembretes pendentes.</p><i>Limpa o painel</i></div>
+        <div class="tool"><b>sessoes_claude</b><p>Lista as sessões do Claude Code e os limites de uso do plano.</p><i>Alguma sessão está esperando por mim? Quanto do limite já usei?</i></div>
+        <div class="tool"><b>status_painel</b><p>Lê CPU, RAM, internet, próximos compromissos e a fila.</p><i>Como está minha internet e minha agenda hoje?</i></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Avisos automáticos do Claude Code (hooks)</h2>
+      <p class="sub">Independem do MCP: o próprio Claude Code avisa o painel do que acontece em cada sessão, sem você pedir.</p>
+      <div class="integ">
+        <h3>Hooks <span class="badge" id="b-hooks">…</span>
+          <span class="tip" data-tip="Adiciona hooks em ~/.claude/settings.json (com backup) para: início e fim de sessão, novo pedido, uso de ferramenta, notificação e término. Se o painel estiver fechado, o hook desiste em 0,3 s e nunca trava o Claude.">?</span></h3>
+        <div class="actions"><button class="btn primary small" id="hooks-on">Instalar</button><button class="btn danger small" id="hooks-off">Remover</button></div>
+        <p><span style="color:var(--amber)">● âmbar piscando</span> quando uma sessão pede permissão ou faz uma pergunta ·
+          <span style="color:var(--green)">● verde</span> quando ela termina · o item <b>Sessões do Claude</b> mostra o estado de cada sessão.
+          As mensagens vêm com o nome do projeto.</p>
+        <p class="warn" id="hooks-old" style="display:none">Seus hooks são de uma versão anterior (só avisos). Clique em <b>Atualizar</b> para ativar também a lista de sessões.</p>
+      </div>
+      <details>
+        <summary>Ver o comando usado no hook</summary>
+        <div class="code" id="hook-cmd"></div>
+      </details>
+    </div>
+
+    <div class="card">
+      <h2>Sessões e limites de uso</h2>
+      <p class="sub">O que está chegando agora do Claude Code. Para aparecer no painel, use os itens
+        <b>🤖 Sessões do Claude</b> e <b>⏳ Limites do Claude</b> na aba Conteúdo.</p>
+      <div class="row">
+        <label class="lbl">Sessões <span class="tip" data-tip="Vêm dos hooks. Uma sessão aparece ao ser aberta (ou no primeiro sinal) e sai quando é encerrada, ou depois de ficar sem sinal pelo tempo configurado abaixo.">?</span></label>
+        <div id="cl-sessions" class="muted">—</div>
+      </div>
+      <div class="row">
+        <label class="lbl">Limites <span class="tip" data-tip="O Claude Code informa o uso do seu plano (Pro/Max) nas janelas de 5 horas e de 7 dias. Só é atualizado enquanto uma sessão do Claude Code está ativa; o painel guarda o último valor.">?</span></label>
+        <div id="cl-limits" class="muted">—</div>
+      </div>
+      <div class="integ">
+        <h3>Statusline (limites de uso) <span class="badge" id="b-status">…</span>
+          <span class="tip" data-tip="Configura a barra de status do Claude Code (statusLine em ~/.claude/settings.json, com backup) para enviar ao painel os limites, o modelo e o uso de contexto. No terminal ela mostra uma linha curta: modelo · contexto · 5h · 7d.">?</span></h3>
+        <div class="actions"><button class="btn primary small" id="status-on">Instalar</button><button class="btn danger small" id="status-off">Remover</button></div>
+        <p id="status-note">Os limites aparecem quando o Claude Code responder a próxima mensagem. Só há limites em planos Pro/Max.</p>
+      </div>
+      <details id="status-manual">
+        <summary>Já tenho uma statusline própria</summary>
+        <p class="muted" style="margin:10px 0 0">Para manter a sua, acrescente no começo do seu script (bash) uma cópia dos dados para o painel:</p>
+        <div class="code">input=$(cat)
+printf '%s' "$input" | curl -s --connect-timeout 0.3 -m 1 --data-binary @- http://127.0.0.1:7878/claude-statusline &gt;/dev/null 2&gt;&amp;1 &amp;
+# no resto do script, use "$input" no lugar de ler o stdin</div>
+      </details>
+      <div class="row" style="margin-top:12px">
+        <label class="lbl">Avisar no limite de <span class="tip" data-tip="Quando o uso da janela de 5 h ou de 7 dias passa de cada um destes percentuais, o painel pisca um aviso (uma vez por limiar).">?</span></label>
+        <div class="field"><input type="text" id="cl-thresholds" style="width:160px" placeholder="80, 95"> <span class="muted">%, separados por vírgula</span></div>
+      </div>
+      <div class="row">
+        <label class="lbl">Pedido de permissão pisca <span class="tip" data-tip="Ligado: quando uma sessão pede permissão ou faz uma pergunta, a mensagem pisca e passa na frente das outras. Desligado: só rola, como as demais.">?</span></label>
+        <div class="field"><label class="switch"><input type="checkbox" id="cl-blink"><span></span></label></div>
+      </div>
+      <div class="row">
+        <label class="lbl">Esquecer sessão após <span class="tip" data-tip="Uma sessão fechada sem aviso (terminal fechado à força, por exemplo) sai da lista depois de ficar este tempo sem sinal.">?</span></label>
+        <div class="field"><input type="number" id="cl-forget" min="1" max="168" style="width:90px"> <span class="muted">horas sem sinal</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>API local</h2>
+      <p class="sub">Qualquer script, programa ou automação pode falar com o painel por HTTP em
+        <code>http://127.0.0.1:7878</code>. É o mesmo caminho que o MCP e os hooks usam.
+        <span class="tip right" data-tip="Só aceita conexões do próprio computador. Pedidos vindos de sites abertos no navegador são bloqueados. Alterar a configuração exige um token que só esta tela recebe.">?</span></p>
+      <table class="api">
+        <tr><th>Rota</th><th>Para quê</th></tr>
+        <tr><td>POST /mensagem</td><td>Mostra uma mensagem. Corpo em texto puro ou JSON:
+          <code>texto</code>, <code>cor</code>, <code>efeito</code> (rolar | fixo | piscar), <code>repetir</code>, <code>segundos</code>,
+          <code>em_minutos</code> (vira lembrete). Os campos também podem ir na URL (<code>?cor=verde&amp;efeito=piscar</code>).</td></tr>
+        <tr><td>POST /texto?nome=X</td><td>Define o texto exibido nos blocos <code>var:X</code>. Corpo vazio apaga.</td></tr>
+        <tr><td>POST /limpar</td><td>Descarta mensagens e lembretes pendentes.</td></tr>
+        <tr><td>GET /status</td><td>CPU, RAM, conexão, próximos compromissos, textos e fila (JSON).</td></tr>
+        <tr><td>GET /claude</td><td>Sessões do Claude Code e limites de uso (JSON).</td></tr>
+        <tr><td>POST /claude-hook</td><td>Recebe o JSON dos hooks do Claude Code (atualiza as sessões e mostra avisos).</td></tr>
+        <tr><td>POST /claude-statusline</td><td>Recebe o JSON da statusline do Claude Code (limites, modelo, contexto) e responde a linha do terminal.</td></tr>
+      </table>
+      <p class="muted" style="margin:14px 0 0">Exemplos (curl, funciona no Windows, Linux e macOS):</p>
+      <div class="code">curl -X POST "http://127.0.0.1:7878/mensagem?cor=verde" --data "Backup concluído"</div>
+      <div class="code">curl -X POST http://127.0.0.1:7878/mensagem -H "Content-Type: application/json" -d "{\"texto\":\"Servidor fora do ar\",\"efeito\":\"piscar\"}"</div>
+      <div class="code">curl -X POST "http://127.0.0.1:7878/texto?nome=status&amp;cor=ciano" --data "Build #42 rodando"</div>
+      <p class="muted" style="margin:14px 0 0">PowerShell:</p>
+      <div class="code">Invoke-RestMethod -Method Post "http://127.0.0.1:7878/mensagem?efeito=piscar" -Body "Atenção!"</div>
+      <p class="muted" style="margin:14px 0 0">Python:</p>
+      <div class="code">import urllib.request
+urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:7878/mensagem?cor=rosa", data="Treino terminou".encode()))</div>
+    </div>
+  </section>
+
+  <!-- ===================== AVANÇADO ===================== -->
+  <section id="tab-avancado">
+    <div class="card">
+      <h2>Arquivo de configuração</h2>
+      <p class="sub">Tudo desta tela fica salvo em <code id="file-path">…</code>. Você pode editar à mão: ao salvar, o painel recarrega.</p>
+      <div class="footer-actions">
+        <button class="btn" id="open-file">Abrir o arquivo no editor</button>
+        <button class="btn" id="revert">Desfazer alterações desta sessão</button>
+        <button class="btn danger" id="defaults">Restaurar padrão</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Mouse no painel</h2>
+      <p class="sub">Arrastar = mover · Clique direito = esta tela · Duplo clique = descartar mensagens · × no canto = fechar.<br>
+      O ícone na bandeja do sistema (perto do relógio do Windows) tem as mesmas opções.</p>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script>
+const TOKEN = "__TOKEN__";
+const COLORS = [
+  ["ambar", "#ffb000", "Âmbar"], ["verde", "#3cff5a", "Verde"], ["vermelho", "#ff3228", "Vermelho"],
+  ["ciano", "#00dcff", "Ciano"], ["branco", "#ebebeb", "Branco"], ["laranja", "#ff7814", "Laranja"],
+  ["rosa", "#ff3cdc", "Rosa"], ["azul", "#3c78ff", "Azul"], ["amarelo", "#ffe628", "Amarelo"],
+];
+const ITEMS = {
+  relogio:   ["🕒 Relógio", "Hora atual (HH:MM) com os dois pontos piscando."],
+  data:      ["📅 Data", "Dia da semana e data, ex.: SAB 14/11."],
+  sistema:   ["💻 CPU + RAM", "Uso de processador e memória. Verde < 50%, âmbar < 80%, vermelho acima."],
+  cpu:       ["💻 Só CPU", "Uso do processador."],
+  ram:       ["💾 Só RAM", "Uso da memória."],
+  rede:      ["📶 Conexão", "Latência atual da internet ou OFFLINE. Testada a cada 30 s com um ping leve."],
+  historico: ["📊 Histórico 24h", "48 barrinhas de 30 min: verde = online, âmbar = falhas, vermelho = offline."],
+  agenda:    ["🗓 Agenda", "Até 3 próximos compromissos (configure na aba Agenda). Some se não houver agenda configurada."],
+  texto:     ["✏️ Texto fixo", "Um texto seu, sempre igual."],
+  sessoes:   ["🤖 Sessões do Claude", "Sessões do Claude Code abertas: ▶ trabalhando, ! precisa de você (pisca), ✓ terminou. Requer os hooks (aba Conectar ao Claude)."],
+  limites:   ["⏳ Limites do Claude", "Uso do plano nas janelas de 5 horas e 7 dias, com o horário em que renovam. Requer a statusline (aba Conectar ao Claude)."],
+  var:       ["🔗 Texto via API", "Um texto que scripts ou o Claude atualizam: POST /texto?nome=NOME. Some quando apagado."],
+};
+const EFFECTS = [
+  ["fixo", "Fixo", "Centralizado. Com vários itens, troca a cada N segundos. Se o texto não cabe, rola uma vez."],
+  ["rolar", "Rolar", "Letreiro: o texto entra pela direita e sai pela esquerda, sem parar."],
+  ["piscar", "Piscar", "Como Fixo, mas piscando. Bom para chamar atenção."],
+];
+
+let cfg = null, original = null, saveTimer = null;
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function status(text, cls) { $("#status").className = cls || ""; $("#status-text").textContent = text; }
+function toast(text, cls) {
+  const t = $("#toast"); t.textContent = text; t.className = "show " + (cls || "");
+  clearTimeout(t._h); t._h = setTimeout(() => t.className = "", 3200);
+}
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { "X-Painel-Token": TOKEN, "Content-Type": "application/json", ...(opts.headers || {}) } });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.ok === false) throw new Error(j.error || ("HTTP " + r.status));
+  return j;
+}
+
+// ---------- carregar / salvar
+async function load() {
+  try {
+    const j = await api("/api/config");
+    cfg = j.config; original = JSON.stringify(cfg);
+    $("#file-path").textContent = j.arquivo;
+    if (j.erro_no_arquivo) toast("O arquivo tinha um erro (" + j.erro_no_arquivo + "). Mostrando o padrão; salvar aqui substitui o arquivo.", "warn");
+    renderAll(); status("Tudo salvo", "ok");
+  } catch (e) { status("Painel não respondeu: " + e.message, "err"); }
+}
+function normalize() {
+  const p = cfg.painel;
+  while (cfg.linha.length < p.linhas) cfg.linha.push({ blocos: [newBlock()] });
+  cfg.linha = cfg.linha.slice(0, p.linhas);
+  if (p.linha_mensagens > p.linhas) p.linha_mensagens = p.linhas;
+}
+function changed(rerender) {
+  normalize();
+  if (rerender) renderAll();
+  status("Salvando…", "busy");
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(save, 450);
+}
+async function save() {
+  try { await api("/api/config", { method: "POST", body: JSON.stringify(cfg) }); status("Salvo · aplicado no painel", "ok"); }
+  catch (e) { status("Erro ao salvar: " + e.message, "err"); }
+}
+
+// ---------- helpers de UI
+function seg(el, options, value, onPick) {
+  el.innerHTML = options.map(([v, label, tip]) =>
+    `<button data-v="${esc(v)}" ${tip ? `title="${esc(tip)}"` : ""} class="${String(v) === String(value) ? "on" : ""}">${esc(label)}</button>`).join("");
+  $$("button", el).forEach(b => b.onclick = () => { $$("button", el).forEach(x => x.classList.toggle("on", x === b)); onPick(b.dataset.v); });
+}
+function slider(id, value, fmt, onInput) {
+  const r = $("#" + id), o = $("#" + id + "-out");
+  r.value = value; o.textContent = fmt(value);
+  r.oninput = () => { o.textContent = fmt(+r.value); onInput(+r.value); };
+}
+function swatches(el, value, onPick, allowDefault = true) {
+  const custom = value && value.startsWith("#") && !COLORS.some(c => c[1] === value) ? value : "#ffffff";
+  el.innerHTML =
+    (allowDefault ? `<button class="sw none ${!value ? "on" : ""}" data-v="" title="Cor padrão do item"></button>` : "") +
+    COLORS.map(([n, hex, label]) => `<button class="sw ${value === n ? "on" : ""}" data-v="${n}" title="${label}" style="background:${hex}"></button>`).join("") +
+    `<input type="color" title="Outra cor" value="${custom}">`;
+  $$(".sw", el).forEach(b => b.onclick = () => { $$(".sw", el).forEach(x => x.classList.toggle("on", x === b)); onPick(b.dataset.v || null); });
+  $("input", el).oninput = e => { $$(".sw", el).forEach(x => x.classList.remove("on")); onPick(e.target.value); };
+}
+
+// ---------- aba Painel
+function renderPanel() {
+  const p = cfg.painel;
+  const isPct = String(p.largura).trim().endsWith("%");
+  const pct = isPct ? parseFloat(p.largura) || 60 : 60;
+  const px = isPct ? 1200 : parseFloat(p.largura) || 1200;
+  const showMode = m => { $("#width-pct-box").style.display = m === "pct" ? "" : "none"; $("#width-px-box").style.display = m === "px" ? "" : "none"; };
+  seg($("#width-mode"), [["pct", "% do monitor"], ["px", "Pixels"]], isPct ? "pct" : "px", m => {
+    showMode(m); p.largura = m === "pct" ? $("#width-pct").value + "%" : $("#width-px").value; changed();
+  });
+  showMode(isPct ? "pct" : "px");
+  slider("width-pct", pct, v => v + "%", v => { p.largura = v + "%"; changed(); });
+  $("#width-px").value = px; $("#width-px").oninput = e => { p.largura = String(e.target.value); changed(); };
+
+  seg($("#lines"), [1, 2, 3, 4, 5, 6].map(n => [n, String(n)]), p.linhas, v => { p.linhas = +v; changed(true); });
+  slider("led", p.tamanho_led, v => v + " px", v => { p.tamanho_led = v; changed(); });
+  $$("#position .choice").forEach(b => {
+    b.classList.toggle("on", b.dataset.v === p.posicao);
+    b.onclick = () => { p.posicao = b.dataset.v; $$("#position .choice").forEach(x => x.classList.toggle("on", x === b)); changed(); };
+  });
+  slider("speed", p.velocidade, v => v + " col/s", v => { p.velocidade = v; changed(); });
+  slider("bright", p.brilho, v => v + "%", v => { p.brilho = v; changed(); });
+  seg($("#msgline"), Array.from({ length: p.linhas }, (_, i) => [i + 1, "Linha " + (i + 1)]), p.linha_mensagens, v => { p.linha_mensagens = +v; changed(); });
+}
+
+// ---------- aba Conteúdo
+function newBlock() { return { itens: ["texto:Olá!"], efeito: "rolar", segundos: 5 }; }
+function itemKind(it) { return it.startsWith("texto:") ? "texto" : it.startsWith("var:") ? "var" : it; }
+
+function renderLines() {
+  const host = $("#lines-editor");
+  host.innerHTML = "";
+  cfg.linha.forEach((line, li) => {
+    const card = document.createElement("div");
+    card.className = "line-card";
+    const isMsg = cfg.painel.linha_mensagens === li + 1;
+    const fixed = line.blocos.reduce((a, b) => a + (b.largura || 0), 0);
+    card.innerHTML = `
+      <div class="line-head"><h3>Linha ${li + 1}</h3>
+        ${isMsg ? `<span class="tag" title="Mensagens e avisos ocupam esta linha enquanto aparecem.">recebe mensagens</span>` : ""}
+        <span style="flex:1"></span><button class="btn small" data-act="add">+ Bloco</button></div>
+      <div class="strip" title="Proporção dos blocos (listrado = largura automática)">${line.blocos.map(b =>
+        `<div class="${b.largura ? "" : "flex"}" style="flex:${b.largura ? b.largura : Math.max(40, 120 - fixed)}"></div>`).join("")}</div>
+      <div class="blocks"></div>`;
+    $("[data-act=add]", card).onclick = () => { line.blocos.push(newBlock()); changed(true); };
+    const blocks = $(".blocks", card);
+    line.blocos.forEach((b, bi) => blocks.appendChild(renderBlock(line, b, bi)));
+    host.appendChild(card);
+  });
+}
+
+function renderBlock(line, b, bi) {
+  const el = document.createElement("div");
+  el.className = "block";
+  const n = line.blocos.length;
+  el.innerHTML = `
+    <div class="block-head"><b>Bloco ${bi + 1}</b>
+      <button class="icon" data-act="left" title="Mover para a esquerda" ${bi === 0 ? "disabled" : ""}>◀</button>
+      <button class="icon" data-act="right" title="Mover para a direita" ${bi === n - 1 ? "disabled" : ""}>▶</button>
+      <button class="icon" data-act="del" title="Remover bloco" ${n === 1 ? "disabled" : ""}>🗑</button></div>
+    <div class="chips"></div>
+    <div class="field"><select data-act="additem"><option value="">+ Adicionar item…</option>${
+      Object.entries(ITEMS).map(([k, [label, tip]]) => `<option value="${k}" title="${esc(tip)}">${label}</option>`).join("")}</select>
+      <span class="tip" data-tip="Vários itens = eles se revezam neste bloco. Passe o mouse nas opções para ver o que cada um mostra.">?</span></div>
+    <div class="field"><label>Efeito</label><div class="seg" data-act="effect"></div></div>
+    <div class="field" data-act="secs-row"><label>Trocar a cada <span class="tip" data-tip="Quanto tempo cada item fica parado antes de passar para o próximo.">?</span></label>
+      <input type="number" min="1" max="600" step="1" data-act="secs" style="width:70px"> <span class="muted">s</span></div>
+    <div class="field"><label>Largura <span class="tip" data-tip="Em LEDs (cada letra usa ~6). Automática = divide o espaço que sobrar com os outros blocos automáticos. O relógio cabe em ~31.">?</span></label>
+      <label style="min-width:0;color:var(--text)"><input type="checkbox" data-act="auto"> automática</label>
+      <input type="number" min="6" max="2000" data-act="width" style="width:70px"></div>
+    <div class="field"><label>Cor <span class="tip" data-tip="Cor dos textos fixos e do relógio/data. Itens como CPU e Conexão têm cores próprias por status.">?</span></label><div class="swatches" data-act="color"></div></div>`;
+
+  const move = d => { const a = line.blocos; [a[bi], a[bi + d]] = [a[bi + d], a[bi]]; changed(true); };
+  $("[data-act=left]", el).onclick = () => move(-1);
+  $("[data-act=right]", el).onclick = () => move(1);
+  $("[data-act=del]", el).onclick = () => { line.blocos.splice(bi, 1); changed(true); };
+
+  const chips = $(".chips", el);
+  if (!b.itens.length) chips.innerHTML = `<span class="muted">Sem itens: o bloco fica apagado.</span>`;
+  b.itens.forEach((it, ii) => {
+    const kind = itemKind(it);
+    const [label, tip] = ITEMS[kind] || ["❓ " + it, "Item desconhecido"];
+    const chip = document.createElement("div");
+    chip.className = "chip"; chip.title = tip;
+    chip.innerHTML = `<span>${label}</span>`;
+    if (kind === "texto" || kind === "var") {
+      const inp = document.createElement("input");
+      inp.type = "text";
+      inp.value = it.slice(kind.length + 1);
+      inp.placeholder = kind === "texto" ? "Seu texto" : "nome (ex.: status)";
+      inp.oninput = () => { b.itens[ii] = kind + ":" + inp.value; changed(); };
+      chip.appendChild(inp);
+    } else {
+      const sp = document.createElement("span"); sp.style.flex = "1"; chip.appendChild(sp);
+    }
+    const x = document.createElement("button");
+    x.className = "x"; x.textContent = "×"; x.title = "Remover item";
+    x.onclick = () => { b.itens.splice(ii, 1); changed(true); };
+    chip.appendChild(x);
+    chips.appendChild(chip);
+  });
+  $("[data-act=additem]", el).onchange = e => {
+    const k = e.target.value; if (!k) return;
+    b.itens.push(k === "texto" ? "texto:Seu texto" : k === "var" ? "var:status" : k);
+    changed(true);
+  };
+
+  const secsRow = $("[data-act=secs-row]", el);
+  const showSecs = () => secsRow.style.display = b.efeito === "rolar" ? "none" : "";
+  seg($("[data-act=effect]", el), EFFECTS, b.efeito, v => { b.efeito = v; showSecs(); changed(); });
+  showSecs();
+  const secs = $("[data-act=secs]", el);
+  secs.value = b.segundos; secs.oninput = () => { b.segundos = Math.max(1, +secs.value || 5); changed(); };
+
+  const auto = $("[data-act=auto]", el), width = $("[data-act=width]", el);
+  auto.checked = !b.largura; width.value = b.largura || 40; width.disabled = auto.checked;
+  auto.onchange = () => { width.disabled = auto.checked; if (auto.checked) delete b.largura; else b.largura = +width.value || 40; changed(true); };
+  width.oninput = () => { if (!auto.checked) { b.largura = Math.max(6, +width.value || 6); changed(); } };
+
+  swatches($("[data-act=color]", el), b.cor || null, v => { if (v) b.cor = v; else delete b.cor; changed(); });
+  return el;
+}
+
+// ---------- aba Agenda
+function renderAgenda() {
+  const a = cfg.agenda;
+  $("#urls").value = a.urls.join("\n");
+  $("#urls").oninput = e => { a.urls = e.target.value.split(/\n+/).map(s => s.trim()).filter(Boolean); changed(); };
+  $("#alerts").value = a.avisar_minutos.join(", ");
+  $("#alerts").oninput = e => { a.avisar_minutos = e.target.value.split(/[,; ]+/).map(Number).filter(n => Number.isFinite(n) && n >= 0); changed(); };
+  $("#refresh").value = a.atualizar_minutos;
+  $("#refresh").oninput = e => { a.atualizar_minutos = Math.max(1, +e.target.value || 10); changed(); };
+}
+async function refreshAgendaStatus() {
+  try {
+    const s = await (await fetch("/status")).json();
+    const el = $("#agenda-status");
+    if (!cfg || !cfg.agenda.urls.length) { el.textContent = "Nenhum endereço configurado."; return; }
+    if (s.agenda_error) { el.innerHTML = `<span style="color:var(--red)">Erro: ${esc(s.agenda_error)}</span>`; return; }
+    const ev = s.agenda_events || [];
+    el.innerHTML = ev.length
+      ? "Próximos: " + ev.slice(0, 5).map(e => `<br>• ${esc(e.dia_inteiro ? e.inicio.slice(0, 10) + " (dia inteiro)" : e.inicio)} — ${esc(e.titulo)}`).join("")
+      : "Conectado · nenhum compromisso nas próximas 48 h.";
+  } catch { /* painel fechado */ }
+}
+
+// ---------- aba Testar
+let testEffect = "rolar", testColor = null;
+function renderTest() {
+  seg($("#t-effect"), [["rolar", "Rolar"], ["fixo", "Fixo"], ["piscar", "Piscar (alerta)"]], testEffect, v => testEffect = v);
+  swatches($("#t-color"), testColor, v => testColor = v);
+  $("#t-send").onclick = async () => {
+    const body = { texto: $("#t-text").value, efeito: testEffect };
+    if (testColor) body.cor = testColor;
+    const delay = +$("#t-delay").value || 0;
+    if (delay > 0) body.em_minutos = delay;
+    try {
+      const j = await api("/mensagem", { method: "POST", body: JSON.stringify(body) });
+      toast(j.agendado_para ? "Lembrete agendado para " + j.agendado_para : "Enviado ✓");
+    } catch (e) { toast("Erro: " + e.message, "err"); }
+  };
+  $("#t-clear").onclick = async () => { await api("/limpar", { method: "POST", body: "" }); toast("Mensagens descartadas"); };
+}
+
+// ---------- aba Avançado
+$("#open-file").onclick = () => api("/api/config/arquivo", { method: "POST", body: "" }).catch(e => toast(e.message, "err"));
+$("#revert").onclick = () => { cfg = JSON.parse(original); changed(true); toast("Voltou como estava ao abrir esta tela"); };
+$("#defaults").onclick = async () => {
+  if (!confirm("Restaurar a configuração padrão? Seus blocos e a agenda serão substituídos.")) return;
+  try { await api("/api/config/padrao", { method: "POST", body: "" }); await load(); toast("Configuração padrão restaurada"); }
+  catch (e) { toast(e.message, "err"); }
+};
+
+// ---------- iniciar com o sistema
+async function loadSystem() {
+  const box = $("#autostart");
+  try {
+    const s = await api("/api/sistema");
+    const names = { windows: "Windows", macos: "macOS", linux: "Linux" };
+    $("#autostart-label").textContent = "Iniciar com o " + (names[s.sistema] || "sistema");
+    const show = on => { box.checked = on; $("#autostart-state").textContent = on ? "Ligado: abre ao entrar no computador" : "Desligado"; };
+    show(s.iniciar_com_sistema);
+    const dev = /[\\/]target[\\/](debug|release)[\\/]/i.test(s.executavel);
+    const warn = $("#autostart-warn");
+    warn.style.display = dev ? "" : "none";
+    warn.textContent = dev ? "Atenção: este painel está rodando da pasta de compilação (" + s.executavel +
+      "). Para iniciar com o sistema, prefira a versão instalada (install.ps1)." : "";
+    box.onchange = async () => {
+      box.disabled = true;
+      try {
+        const r = await api("/api/sistema", { method: "POST", body: JSON.stringify({ iniciar_com_sistema: box.checked }) });
+        show(r.iniciar_com_sistema);
+        toast(r.iniciar_com_sistema ? "O painel vai abrir junto com o sistema" : "Não abre mais junto com o sistema");
+      } catch (e) { show(!box.checked); toast("Erro: " + e.message, "err"); }
+      box.disabled = false;
+    };
+  } catch { $("#autostart-state").textContent = "Indisponível"; box.disabled = true; }
+}
+
+// ---------- aba Conectar
+function badge(el, on, onText, offText) {
+  el.className = "badge " + (on ? "on" : "off");
+  el.textContent = on ? onText : offText;
+}
+function addCopyButtons(root = document) {
+  $$(".code", root).forEach(box => {
+    if ($(".copy", box)) return;
+    const b = document.createElement("button");
+    b.className = "btn small copy"; b.textContent = "Copiar"; b.title = "Copiar para a área de transferência";
+    b.onclick = async () => {
+      const text = [...box.childNodes].filter(n => n !== b).map(n => n.textContent).join("");
+      try { await navigator.clipboard.writeText(text.trim()); b.textContent = "Copiado ✓"; }
+      catch { b.textContent = "Falhou"; }
+      setTimeout(() => b.textContent = "Copiar", 1500);
+    };
+    box.appendChild(b);
+  });
+}
+function setCode(id, text) {
+  const box = $("#" + id);
+  box.textContent = text;
+  addCopyButtons(box.parentElement);
+}
+async function loadIntegrations() {
+  try {
+    const s = await api("/api/integracoes");
+    const cc = s.claude_code, cd = s.claude_desktop;
+    badge($("#b-code"), cc.conectado, "Conectado", cc.cli ? "Não conectado" : "CLI não encontrada");
+    $("#code-on").disabled = !cc.cli || !s.mcp_exe_existe;
+    $("#code-off").style.display = cc.conectado ? "" : "none";
+    $("#code-on").textContent = cc.conectado ? "Reconectar" : "Conectar";
+    $("#code-note").textContent = cc.cli
+      ? "As próximas sessões do Claude Code já terão as ferramentas do painel."
+      : "Não encontrei a CLI 'claude'. Instale o Claude Code ou use a configuração manual abaixo.";
+
+    badge($("#b-desktop"), cd.conectado, "Conectado", cd.instalado ? "Não conectado" : "Não instalado");
+    $("#desk-on").disabled = !cd.instalado || !s.mcp_exe_existe;
+    $("#desk-off").style.display = cd.conectado ? "" : "none";
+    $("#desk-on").textContent = cd.conectado ? "Reconectar" : "Conectar";
+    $("#desk-file").innerHTML = cd.arquivo ? `<code>${esc(cd.arquivo)}</code>` : "arquivo do cliente";
+
+    const h = s.hooks, old = h.instalados && !h.completos;
+    badge($("#b-hooks"), h.completos, "Instalados", old ? "Desatualizados" : "Não instalados");
+    $("#hooks-off").style.display = h.instalados ? "" : "none";
+    $("#hooks-on").textContent = old ? "Atualizar" : h.instalados ? "Reinstalar" : "Instalar";
+    $("#hooks-old").style.display = old ? "" : "none";
+
+    const sl = s.statusline;
+    badge($("#b-status"), sl.instalada, "Instalada", sl.outra ? "Você usa outra" : "Não instalada");
+    $("#status-on").disabled = !!sl.outra;
+    $("#status-off").style.display = sl.instalada ? "" : "none";
+    $("#status-on").textContent = sl.instalada ? "Reinstalar" : "Instalar";
+    $("#status-note").textContent = sl.outra
+      ? "Você já tem uma statusline própria; para não apagá-la, veja a integração manual abaixo."
+      : "Os limites aparecem quando o Claude Code responder a próxima mensagem. Só há limites em planos Pro/Max.";
+    $("#status-manual").open = !!sl.outra;
+    refreshClaude();
+
+    setCode("manual-code", `claude mcp add painel-led -s user -- "${s.mcp_exe}"`);
+    setCode("manual-json", JSON.stringify({ mcpServers: { "painel-led": { command: s.mcp_exe, args: [] } } }, null, 2));
+    setCode("hook-cmd", s.hooks.comando);
+    if (!s.mcp_exe_existe) toast("Não encontrei o painel-led-mcp ao lado do painel. Rode o install.ps1.", "warn");
+  } catch (e) { toast("Não consegui ler as integrações: " + e.message, "err"); }
+}
+function integAction(btnId, path) {
+  const b = $("#" + btnId);
+  b.onclick = async () => {
+    const label = b.textContent;
+    b.disabled = true; b.textContent = "…";
+    try { const r = await api("/api/integracoes/" + path, { method: "POST", body: "" }); toast(r.mensagem || "Feito ✓"); }
+    catch (e) { toast("Erro: " + e.message, "err"); }
+    b.textContent = label; b.disabled = false;
+    loadIntegrations();
+  };
+}
+integAction("code-on", "claude-code/conectar");
+integAction("code-off", "claude-code/remover");
+integAction("desk-on", "claude-desktop/conectar");
+integAction("desk-off", "claude-desktop/remover");
+integAction("hooks-on", "hooks/instalar");
+integAction("hooks-off", "hooks/remover");
+integAction("status-on", "statusline/instalar");
+integAction("status-off", "statusline/remover");
+
+// ---------- sessões e limites (ao vivo)
+const STATE_LABEL = { trabalhando: "▶ trabalhando", precisa_de_voce: "! precisa de você", esperando: "… esperando você",
+  concluida: "✓ terminou", aberta: "• aberta" };
+function renderClaude() {
+  const c = cfg.claude;
+  $("#cl-thresholds").value = c.avisar_limite.join(", ");
+  $("#cl-thresholds").oninput = e => { c.avisar_limite = e.target.value.split(/[,; ]+/).map(Number).filter(n => Number.isFinite(n) && n > 0 && n <= 100); changed(); };
+  $("#cl-blink").checked = c.piscar_permissao;
+  $("#cl-blink").onchange = e => { c.piscar_permissao = e.target.checked; changed(); };
+  $("#cl-forget").value = c.esquecer_horas;
+  $("#cl-forget").oninput = e => { c.esquecer_horas = Math.max(1, +e.target.value || 12); changed(); };
+}
+function limitRow(name, w) {
+  if (!w) return `${name} <span class="muted">sem dados</span>`;
+  const p = w.usado_pct, color = p < 60 ? "var(--green)" : p < 85 ? "var(--amber)" : "var(--red)";
+  return `${name}<span class="bar"><i style="width:${Math.min(100, p)}%;background:${color}"></i></span>${Math.round(p)}% · renova ${esc(w.renova_em || "?")}`;
+}
+async function refreshClaude() {
+  try {
+    const c = await api("/claude");
+    const ss = c.sessoes || [];
+    $("#cl-sessions").innerHTML = ss.length
+      ? `<div class="sess">${ss.map(x => {
+          const tip = [x.modelo, x.contexto_pct != null ? "contexto " + Math.round(x.contexto_pct) + "%" : "", x.detalhe].filter(Boolean).join(" · ");
+          return `<span class="${x.estado}" title="${esc(tip)}"><b>${esc(x.projeto)}</b> ${STATE_LABEL[x.estado] || x.estado}<small>desde ${esc(x.desde.slice(0, 5))}</small></span>`;
+        }).join("")}</div>`
+      : "Nenhuma sessão no momento. Elas aparecem quando o Claude Code é aberto (com os hooks instalados).";
+    const l = c.limites;
+    $("#cl-limits").innerHTML = l.atualizado_em
+      ? `${limitRow("5 horas", l.cinco_horas)}<br>${limitRow("7 dias", l.sete_dias)}<br><span class="muted">atualizado em ${esc(l.atualizado_em)}</span>`
+      : "Ainda sem dados. Instale a statusline abaixo e mande uma mensagem no Claude Code.";
+  } catch { /* painel fechado */ }
+}
+setInterval(() => { if ($("#tab-conectar").classList.contains("active")) refreshClaude(); }, 3000);
+addCopyButtons();
+
+function renderAll() { renderPanel(); renderLines(); renderAgenda(); renderClaude(); renderTest(); }
+loadSystem();
+
+$$("#tabs button").forEach(b => b.onclick = () => {
+  $$("#tabs button").forEach(x => x.classList.toggle("active", x === b));
+  $$("main > section").forEach(s => s.classList.toggle("active", s.id === "tab-" + b.dataset.tab));
+  if (b.dataset.tab === "agenda") refreshAgendaStatus();
+  if (b.dataset.tab === "conectar") loadIntegrations();
+});
+setInterval(() => { if ($("#tab-agenda").classList.contains("active")) refreshAgendaStatus(); }, 5000);
+// Permite abrir direto numa aba: /config#agenda
+const startTab = $(`#tabs button[data-tab="${location.hash.slice(1)}"]`);
+if (startTab) startTab.click();
+load();
+</script>
+</body>
+</html>
