@@ -45,6 +45,7 @@ Em outras distribuições, baixe o `.tar.gz`, descompacte e rode `./install.sh`.
 O pacote precisa de GTK 3 e de `libayatana-appindicator3` (ou `libappindicator3`); o `.deb` já puxa as duas.
 
 O que muda no Linux:
+- No WSL (WSLg) e com `PAINEL_LED_JANELA_NORMAL=1`, o painel usa uma janela comum, que aparece na barra de tarefas; nos demais ambientes ele fica fora dela.
 - No Wayland, o painel abre via XWayland. O Wayland não deixa uma janela se posicionar sozinha nem ficar sempre no topo; pelo XWayland as duas coisas funcionam. Para forçar o Wayland nativo, rode com `PAINEL_LED_WAYLAND=1`.
 - O ícone na bandeja usa AppIndicator. No GNOME, isso depende da extensão AppIndicator, que já vem no Ubuntu. Sem bandeja, o painel funciona do mesmo jeito: o clique direito abre as configurações.
 - A tela de configurações abre em modo app do Chrome, Chromium, Edge ou Brave, se houver algum; senão, no navegador padrão.

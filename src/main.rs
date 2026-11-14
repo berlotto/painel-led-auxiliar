@@ -560,8 +560,13 @@ impl ApplicationHandler<UserEvent> for App {
         #[cfg(target_os = "linux")]
         let attrs = {
             use winit::platform::x11::{WindowAttributesExtX11, WindowType};
-            // "Utility" fica fora da barra de tarefas na maioria dos ambientes (só vale no X11).
-            attrs.with_x11_window_type(vec![WindowType::Utility]).with_name("painel-led", "painel-led")
+            // "Utility" fica fora da barra de tarefas no GNOME e no KDE (só vale no X11).
+            // O WSLg (e algum gerenciador de janelas que trate mal esse tipo) esconde a janela:
+            // nesses casos usa uma janela comum.
+            let normal = std::env::var_os("WSL_DISTRO_NAME").is_some()
+                || std::env::var_os("PAINEL_LED_JANELA_NORMAL").is_some();
+            let kind = if normal { WindowType::Normal } else { WindowType::Utility };
+            attrs.with_x11_window_type(vec![kind]).with_name("painel-led", "painel-led")
         };
         let window = match el.create_window(attrs) {
             Ok(w) => Rc::new(w),
