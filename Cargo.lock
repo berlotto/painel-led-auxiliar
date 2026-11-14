@@ -1657,6 +1657,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "dirs",
+ "gtk",
  "rrule",
  "serde",
  "serde_json",

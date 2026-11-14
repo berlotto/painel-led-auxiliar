@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Painel LED
+Comment=Letreiro de LED sempre no topo: hora, sistema, internet, agenda e Claude Code
+Exec=painel-led
+Icon=painel-led
+Terminal=false
+Categories=Utility;
+StartupWMClass=painel-led

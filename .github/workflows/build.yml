@@ -1,0 +1,150 @@
+# Compila para Windows e Linux e gera os instaladores.
+# - Tag "v*" (ex.: v0.2.0): publica uma Release com todos os arquivos.
+# - Push na main ou execução manual: só gera os arquivos como artefatos do workflow.
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: Testes
+        run: cargo test --release
+
+      - name: Compilar
+        run: cargo build --release
+
+      - name: Versão
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq "tag") {
+            $v = $env:GITHUB_REF_NAME.TrimStart("v")
+          } else {
+            $base = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+            $v = "$base-dev.$env:GITHUB_RUN_NUMBER"
+          }
+          $num = ($v -split "-")[0]
+          if (($num -split "\.").Count -lt 4) { $num = "$num.0" }
+          "APP_VERSION=$v" >> $env:GITHUB_ENV
+          "NUM_VERSION=$num" >> $env:GITHUB_ENV
+          "Versão: $v ($num)"
+
+      - name: Instalador (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          & $iscc /Q "/DAppVersion=$env:APP_VERSION" "/DNumVersion=$env:NUM_VERSION" installer\painel-led.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC falhou" }
+
+      - name: Versão portátil (zip)
+        shell: pwsh
+        run: |
+          $dir = "dist\painel-led-$env:APP_VERSION"
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          Copy-Item target\release\painel-led.exe, target\release\painel-led-mcp.exe, LICENSE, README.md $dir
+          Compress-Archive -Path "$dir\*" -DestinationPath "dist\painel-led-$env:APP_VERSION-windows-portatil.zip" -Force
+          Remove-Item -Recurse $dir
+          Rename-Item "dist\painel-led-$env:APP_VERSION-instalador.exe" "painel-led-$env:APP_VERSION-windows-instalador.exe"
+          Get-ChildItem dist | ForEach-Object { "{0}  {1:N0} KB" -f $_.Name, ($_.Length / 1KB) }
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: windows
+          path: dist/*
+
+  linux:
+    # 22.04: glibc mais antiga, o binário roda também em distribuições mais velhas.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Dependências
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgtk-3-dev libayatana-appindicator3-dev libxdo-dev
+
+      - name: Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: Testes
+        run: cargo test --release
+
+      - name: Versão
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            v="${GITHUB_REF_NAME#v}"; deb="$v"
+          else
+            base=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+            v="$base-dev.$GITHUB_RUN_NUMBER"; deb="$base~dev.$GITHUB_RUN_NUMBER"
+          fi
+          echo "APP_VERSION=$v" >> "$GITHUB_ENV"
+          echo "DEB_VERSION=$deb" >> "$GITHUB_ENV"
+          echo "Versão: $v (deb $deb)"
+
+      - name: Pacote .deb
+        run: |
+          cargo install cargo-deb --locked
+          cargo deb --deb-version "$DEB_VERSION" --output "dist/painel-led_${APP_VERSION}_amd64.deb"
+          dpkg-deb --info dist/*.deb | sed -n '/Depends/,/Recommends/p'
+
+      - name: Versão portátil (tar.gz)
+        run: |
+          d="painel-led-$APP_VERSION"
+          mkdir -p "$d"
+          cp target/release/painel-led target/release/painel-led-mcp assets/painel-led.desktop assets/painel-led.png LICENSE README.md "$d/"
+          cp installer/install-linux.sh "$d/install.sh"
+          tar czf "dist/painel-led-$APP_VERSION-linux-x86_64.tar.gz" "$d"
+          ls -la dist
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: linux
+          path: dist/*
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          cat > notes.md <<EOF
+          ## Como instalar
+
+          **Windows**: baixe \`painel-led-$v-windows-instalador.exe\` e execute. Não precisa de administrador.
+          O executável não é assinado; se o SmartScreen avisar, clique em **Mais informações → Executar assim mesmo**.
+
+          **Ubuntu, Debian, Mint, Pop!_OS**: baixe \`painel-led_${v}_amd64.deb\` e instale:
+          \`\`\`
+          sudo apt install ./painel-led_${v}_amd64.deb
+          \`\`\`
+
+          **Outras distribuições**: baixe o \`.tar.gz\`, descompacte e rode \`./install.sh\` (instala em ~/.local, sem root).
+          Precisa de GTK 3 e libayatana-appindicator3 (ou libappindicator3).
+
+          Depois de instalar, clique com o botão direito no painel (ou no ícone da bandeja) → **Configurações** → aba **Conectar ao Claude**.
+          EOF
+          sed -i 's/^          //' notes.md
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "Painel LED $v" --notes-file notes.md --generate-notes

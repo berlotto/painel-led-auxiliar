@@ -1,4 +1,4 @@
-"""Gera assets/painel-led.ico com o mesmo desenho do ícone da bandeja (src/main.rs, icon_rgba)."""
+"""Gera assets/painel-led.ico (Windows) e assets/painel-led.png (Linux) com o mesmo desenho do ícone da bandeja (src/main.rs, icon_rgba)."""
 import math
 from pathlib import Path
 from PIL import Image
@@ -30,4 +30,5 @@ def icon(size: int) -> Image.Image:
 out = Path(__file__).with_name("painel-led.ico")
 sizes = [16, 24, 32, 48, 64, 128, 256]
 icon(256).save(out, sizes=[(n, n) for n in sizes], append_images=[icon(n) for n in sizes[:-1]])
-print(out)
+icon(256).save(out.with_suffix(".png"))
+print(out, out.with_suffix(".png"))

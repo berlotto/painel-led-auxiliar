@@ -9,6 +9,7 @@ mod integrations;
 mod render;
 mod sources;
 mod state;
+mod tray;
 
 use std::num::NonZeroU32;
 use std::rc::Rc;
@@ -16,8 +17,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
 use serde::{Deserialize, Serialize};
-use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem};
-use tray_icon::{TrayIcon, TrayIconBuilder};
+use tray_icon::menu::MenuEvent;
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, MouseButton, WindowEvent};
@@ -28,6 +28,7 @@ use winit::window::{Window, WindowId, WindowLevel};
 use config::{Config, Effect, PanelCfg, Position, Width};
 use render::{Col, Composer};
 use state::{Message, Rgb, Shared, State};
+use tray::Tray;
 
 type Surface = softbuffer::Surface<Rc<Window>, Rc<Window>>;
 
@@ -286,84 +287,6 @@ enum UserEvent {
     Menu(MenuEvent),
 }
 
-/// Ícone: matriz 4x4 de LEDs âmbar num quadrado escuro arredondado.
-fn icon_rgba(size: u32) -> Vec<u8> {
-    const LIT: [[u8; 4]; 4] = [[1, 1, 1, 1], [1, 0, 0, 1], [1, 0, 0, 1], [1, 1, 1, 1]];
-    let s = size as f32;
-    let mut px = vec![0u8; (size * size * 4) as usize];
-    for y in 0..size {
-        for x in 0..size {
-            let (fx, fy) = (x as f32 + 0.5, y as f32 + 0.5);
-            // Fundo com cantos arredondados.
-            let r = s * 0.22;
-            let cx = fx.clamp(r, s - r);
-            let cy = fy.clamp(r, s - r);
-            let bg_a = (r - ((fx - cx).powi(2) + (fy - cy).powi(2)).sqrt() + 0.5).clamp(0.0, 1.0);
-            let mut c = [20.0, 20.0, 20.0];
-            let mut a = bg_a;
-            // LEDs.
-            let cell = s / 4.0;
-            let (gx, gy) = (((fx / cell) as usize).min(3), ((fy / cell) as usize).min(3));
-            let (lx, ly) = (gx as f32 * cell + cell / 2.0, gy as f32 * cell + cell / 2.0);
-            let d = ((fx - lx).powi(2) + (fy - ly).powi(2)).sqrt();
-            let dot = (cell * 0.36 - d + 0.5).clamp(0.0, 1.0);
-            let led = if LIT[gy][gx] == 1 { [255.0, 176.0, 0.0] } else { [60.0, 60.0, 60.0] };
-            for i in 0..3 {
-                c[i] = c[i] * (1.0 - dot) + led[i] * dot;
-            }
-            a = a.max(dot * bg_a);
-            let o = ((y * size + x) * 4) as usize;
-            px[o..o + 4].copy_from_slice(&[c[0] as u8, c[1] as u8, c[2] as u8, (a * 255.0) as u8]);
-        }
-    }
-    px
-}
-
-#[cfg(windows)]
-const AUTOSTART_LABEL: &str = "Iniciar com o Windows";
-#[cfg(not(windows))]
-const AUTOSTART_LABEL: &str = "Iniciar com o sistema";
-
-struct Tray {
-    _icon: TrayIcon,
-    settings: MenuItem,
-    toggle: MenuItem,
-    clear: MenuItem,
-    file: MenuItem,
-    autostart: CheckMenuItem,
-    quit: MenuItem,
-}
-
-fn build_tray() -> Option<Tray> {
-    let settings = MenuItem::new("Configurações…", true, None);
-    let toggle = MenuItem::new("Ocultar painel", true, None);
-    let clear = MenuItem::new("Limpar mensagens", true, None);
-    let file = MenuItem::new("Editar arquivo de configuração", true, None);
-    let autostart = CheckMenuItem::new(AUTOSTART_LABEL, true, autostart::is_enabled(), None);
-    let quit = MenuItem::new("Sair", true, None);
-    let menu = Menu::new();
-    menu.append_items(&[
-        &settings,
-        &toggle,
-        &clear,
-        &PredefinedMenuItem::separator(),
-        &autostart,
-        &file,
-        &PredefinedMenuItem::separator(),
-        &quit,
-    ])
-    .ok()?;
-    let icon = tray_icon::Icon::from_rgba(icon_rgba(32), 32, 32).ok()?;
-    let tray = TrayIconBuilder::new()
-        .with_tooltip("Painel LED")
-        .with_icon(icon)
-        .with_menu(Box::new(menu))
-        .with_menu_on_left_click(true)
-        .build()
-        .ok()?;
-    Some(Tray { _icon: tray, settings, toggle, clear, file, autostart, quit })
-}
-
 /// Abre a tela de configurações (servida pelo próprio painel) numa janela de app do Edge,
 /// ou no navegador padrão.
 fn open_settings() {
@@ -395,7 +318,21 @@ fn open_settings() {
     #[cfg(target_os = "macos")]
     let _ = std::process::Command::new("open").arg(&url).spawn();
     #[cfg(all(unix, not(target_os = "macos")))]
-    let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+    {
+        let browsers = ["google-chrome", "chromium", "chromium-browser", "microsoft-edge", "brave-browser"];
+        let opened = browsers.iter().any(|b| {
+            std::process::Command::new(b)
+                .arg(format!("--app={url}"))
+                .arg("--window-size=1000,900")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .is_ok()
+        });
+        if !opened {
+            let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+        }
+    }
 }
 
 // ---------------------------------------------------------------- app
@@ -428,7 +365,7 @@ impl App {
             w.set_visible(visible);
         }
         if let Some(t) = &self.tray {
-            t.toggle.set_text(if visible { "Ocultar painel" } else { "Mostrar painel" });
+            t.set_visible(visible);
         }
         if visible {
             self.redraw_now();
@@ -446,18 +383,19 @@ impl App {
 
     fn on_menu(&mut self, el: &ActiveEventLoop, ev: MenuEvent) {
         let Some(t) = &self.tray else { return };
+        let ids = t.ids.clone();
         let id = ev.id();
-        if id == t.settings.id() {
+        if id == &ids.settings {
             open_settings();
-        } else if id == t.toggle.id() {
+        } else if id == &ids.toggle {
             self.set_visible(!self.visible);
-        } else if id == t.clear.id() {
+        } else if id == &ids.clear {
             self.clear_messages();
-        } else if id == t.file.id() {
+        } else if id == &ids.file {
             config::open_in_editor();
-        } else if id == t.autostart.id() {
-            // O menu já inverteu a marcação; aplica e confirma com o estado real.
-            let want = t.autostart.is_checked();
+        } else if id == &ids.autostart {
+            // Inverte o estado real (a marcação do menu é só reflexo dele).
+            let want = !autostart::is_enabled();
             if let Err(e) = autostart::set(want) {
                 self.state.lock().unwrap().push_message(Message {
                     text: format!("Não consegui alterar a inicialização: {e}"),
@@ -469,9 +407,9 @@ impl App {
                 self.redraw_now();
             }
             if let Some(t) = &self.tray {
-                t.autostart.set_checked(autostart::is_enabled());
+                t.set_autostart(autostart::is_enabled());
             }
-        } else if id == t.quit.id() {
+        } else if id == &ids.quit {
             el.exit();
         }
     }
@@ -526,10 +464,7 @@ impl App {
         self.cfg_checked = Instant::now();
         // Mantém a marcação da bandeja em sincronia (a tela de configurações também pode mudar isso).
         if let Some(t) = &self.tray {
-            let on = autostart::is_enabled();
-            if t.autostart.is_checked() != on {
-                t.autostart.set_checked(on);
-            }
+            t.set_autostart(autostart::is_enabled());
         }
         let m = config::modified();
         if m == self.cfg_mtime {
@@ -622,6 +557,12 @@ impl ApplicationHandler<UserEvent> for App {
             use winit::platform::windows::WindowAttributesExtWindows;
             attrs.with_skip_taskbar(true)
         };
+        #[cfg(target_os = "linux")]
+        let attrs = {
+            use winit::platform::x11::{WindowAttributesExtX11, WindowType};
+            // "Utility" fica fora da barra de tarefas na maioria dos ambientes (só vale no X11).
+            attrs.with_x11_window_type(vec![WindowType::Utility]).with_name("painel-led", "painel-led")
+        };
         let window = match el.create_window(attrs) {
             Ok(w) => Rc::new(w),
             Err(_) => {
@@ -636,7 +577,7 @@ impl ApplicationHandler<UserEvent> for App {
         self.geom = Some(g);
         self.surface = Some(surface);
         self.window = Some(window);
-        self.tray = build_tray();
+        self.tray = Tray::new(autostart::is_enabled());
         self.resize_surface();
         self.redraw_now();
     }
@@ -780,7 +721,16 @@ fn main() {
         claude::load_limits(&mut st);
     }
 
-    let event_loop = EventLoop::<UserEvent>::with_user_event().build().expect("event loop");
+    let mut builder = EventLoop::<UserEvent>::with_user_event();
+    #[cfg(target_os = "linux")]
+    {
+        use winit::platform::x11::EventLoopBuilderExtX11;
+        let force_wayland = std::env::var_os("PAINEL_LED_WAYLAND").is_some();
+        if !force_wayland && std::env::var_os("DISPLAY").is_some() {
+            builder.with_x11();
+        }
+    }
+    let event_loop = builder.build().expect("event loop");
     let proxy = Mutex::new(event_loop.create_proxy());
     let wake: state::Wake = Arc::new(move || {
         let _ = proxy.lock().unwrap().send_event(UserEvent::Wake);
