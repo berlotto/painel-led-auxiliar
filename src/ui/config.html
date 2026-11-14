@@ -106,6 +106,14 @@
   .sess small { color: var(--muted); margin-left: 4px; }
   .bar { display: inline-block; width: 120px; height: 8px; border-radius: 4px; background: var(--card2); border: 1px solid var(--line); vertical-align: middle; margin: 0 8px; overflow: hidden; }
   .bar i { display: block; height: 100%; }
+  .monmap { position: relative; height: 130px; margin-bottom: 8px; }
+  .mon { position: absolute; border: 2px solid var(--line); border-radius: 6px; background: var(--card2); color: var(--muted);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; font-size: 12px; line-height: 1.3; transition: .12s; }
+  .mon b { font-size: 20px; color: var(--text, #ddd); }
+  .mon:hover { border-color: var(--amber-d); }
+  .mon.on { border-color: var(--amber); background: #2a2210; color: var(--amber); }
+  .mon.on b { color: var(--amber); }
+  .mon .here { position: absolute; top: 5px; left: 50%; transform: translateX(-50%); width: 46%; height: 5px; border-radius: 3px; background: var(--amber); }
   .integ { display: grid; grid-template-columns: 1fr auto; gap: 6px 14px; align-items: center; padding: 14px 0; border-top: 1px solid var(--line); }
   .integ:first-of-type { border-top: none; }
   .integ h3 { margin: 0; font-size: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
@@ -191,6 +199,24 @@
           <button class="choice" data-v="topo"><div class="scr topo"></div><b>Topo</b><small>Colado no alto da tela</small></button>
           <button class="choice" data-v="base"><div class="scr base"></div><b>Base</b><small>Logo acima da barra de tarefas</small></button>
           <button class="choice" data-v="livre"><div class="scr livre"></div><b>Livre</b><small>Arraste para onde quiser</small></button>
+        </div>
+      </div>
+
+      <div class="row" style="align-items:start">
+        <label class="lbl">Monitor <span class="tip" data-tip="Clique num monitor para mandar o painel para lá. Automático: o painel fica onde você arrastar. Com um monitor escolhido, arrastar o painel para outro monitor também troca a escolha. A barrinha âmbar mostra onde o painel está agora.">?</span></label>
+        <div>
+          <div class="monmap" id="monmap"></div>
+          <div class="field"><button class="btn small" id="mon-auto">Automático</button> <span class="muted" id="mon-state">…</span></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <label class="lbl">Reservar espaço <span class="tip" data-tip="Com a posição Topo ou Base, o painel vira uma barra do sistema: o espaço dele sai da área útil do monitor, e janelas maximizadas param antes dele, em vez de ficarem por baixo. Vale só para o monitor escolhido. No Linux funciona no X11 (inclusive XWayland), não no Wayland nativo.">?</span></label>
+        <div>
+          <div class="field">
+            <label class="switch"><input type="checkbox" id="reserve"><span></span></label>
+            <span class="muted" id="reserve-state">…</span>
+          </div>
         </div>
       </div>
     </div>
@@ -361,6 +387,10 @@
       <p class="sub">O que está chegando agora do Claude Code. Para aparecer no painel, use os itens
         <b>🤖 Sessões do Claude</b> e <b>⏳ Limites do Claude</b> na aba Conteúdo.</p>
       <div class="row">
+        <label class="lbl">Conta <span class="tip" data-tip="A conta logada no Claude Code neste computador (lida de ~/.claude.json). Os limites de uso abaixo são desta conta. Para trocar, use /login no Claude Code.">?</span></label>
+        <div id="cl-account" class="muted">—</div>
+      </div>
+      <div class="row">
         <label class="lbl">Sessões <span class="tip" data-tip="Vêm dos hooks. Uma sessão aparece ao ser aberta (ou no primeiro sinal) e sai quando é encerrada, ou depois de ficar sem sinal pelo tempo configurado abaixo.">?</span></label>
         <div id="cl-sessions" class="muted">—</div>
       </div>
@@ -388,6 +418,10 @@ printf '%s' "$input" | curl -s --connect-timeout 0.3 -m 1 --data-binary @- http:
       <div class="row">
         <label class="lbl">Pedido de permissão pisca <span class="tip" data-tip="Ligado: quando uma sessão pede permissão ou faz uma pergunta, a mensagem pisca e passa na frente das outras. Desligado: só rola, como as demais.">?</span></label>
         <div class="field"><label class="switch"><input type="checkbox" id="cl-blink"><span></span></label></div>
+      </div>
+      <div class="row">
+        <label class="lbl">Dizer o que terminou <span class="tip" data-tip="Ligado: quando uma sessão termina, o painel mostra o começo do resumo final do Claude, por exemplo 'CLAUDE [api]: terminou: Corrigi os 3 testes de login.' Desligado: só 'terminou - sua vez!'. Passe o mouse sobre uma sessão acima para ver o último pedido e o resumo.">?</span></label>
+        <div class="field"><label class="switch"><input type="checkbox" id="cl-detail"><span></span></label></div>
       </div>
       <div class="row">
         <label class="lbl">Esquecer sessão após <span class="tip" data-tip="Uma sessão fechada sem aviso (terminal fechado à força, por exemplo) sai da lista depois de ficar este tempo sem sinal.">?</span></label>
@@ -555,12 +589,56 @@ function renderPanel() {
   slider("led", p.tamanho_led, v => v + " px", v => { p.tamanho_led = v; changed(); });
   $$("#position .choice").forEach(b => {
     b.classList.toggle("on", b.dataset.v === p.posicao);
-    b.onclick = () => { p.posicao = b.dataset.v; $$("#position .choice").forEach(x => x.classList.toggle("on", x === b)); changed(); };
+    b.onclick = () => { p.posicao = b.dataset.v; $$("#position .choice").forEach(x => x.classList.toggle("on", x === b)); renderReserve(); changed(); };
   });
+  $("#reserve").onchange = e => { p.reservar_espaco = e.target.checked; renderReserve(); changed(); };
+  $("#mon-auto").onclick = () => { p.monitor = 0; renderMonitors(); changed(); };
+  renderReserve();
+  renderMonitors();
   slider("speed", p.velocidade, v => v + " col/s", v => { p.velocidade = v; changed(); });
   slider("bright", p.brilho, v => v + "%", v => { p.brilho = v; changed(); });
   seg($("#msgline"), Array.from({ length: p.linhas }, (_, i) => [i + 1, "Linha " + (i + 1)]), p.linha_mensagens, v => { p.linha_mensagens = +v; changed(); });
 }
+
+let monitors = [], reserveSupported = true;
+function renderReserve() {
+  const p = cfg.painel, edge = p.posicao === "topo" || p.posicao === "base";
+  const box = $("#reserve");
+  box.checked = !!p.reservar_espaco;
+  box.disabled = !edge || !reserveSupported;
+  $("#reserve-state").textContent = !reserveSupported ? "Não disponível neste sistema"
+    : !edge ? "Escolha a posição Topo ou Base para usar"
+    : p.reservar_espaco ? "Ligado: janelas maximizadas não cobrem o painel"
+    : "Desligado: o painel fica por cima das janelas";
+}
+function renderMonitors() {
+  const map = $("#monmap"), p = cfg.painel;
+  if (!monitors.length) { map.innerHTML = ""; map.style.height = "0"; $("#mon-state").textContent = "Lista de monitores indisponível"; return; }
+  // Desenha os monitores na proporção e posição reais.
+  const minX = Math.min(...monitors.map(m => m.x)), minY = Math.min(...monitors.map(m => m.y));
+  const maxX = Math.max(...monitors.map(m => m.x + m.largura)), maxY = Math.max(...monitors.map(m => m.y + m.altura));
+  const W = map.clientWidth || 560, H = 130, k = Math.min(W / (maxX - minX), H / (maxY - minY));
+  map.style.height = Math.round((maxY - minY) * k) + "px";
+  map.innerHTML = monitors.map(m => `<div class="mon${p.monitor === m.numero ? " on" : ""}" data-n="${m.numero}"
+      style="left:${(m.x - minX) * k + 2}px;top:${(m.y - minY) * k + 2}px;width:${m.largura * k - 6}px;height:${m.altura * k - 6}px"
+      title="Monitor ${m.numero}: ${m.largura}×${m.altura}${m.principal ? " (principal)" : ""}">
+      ${m.atual ? '<i class="here"></i>' : ""}<b>${m.numero}</b>${m.largura}×${m.altura}${m.principal ? "<span>principal</span>" : ""}</div>`).join("");
+  $$(".mon", map).forEach(el => el.onclick = () => { p.monitor = +el.dataset.n; renderMonitors(); changed(); });
+  const here = monitors.find(m => m.atual);
+  $("#mon-state").textContent = (p.monitor ? `Fixo no monitor ${p.monitor}` : "Automático: fica onde você arrastar") +
+    (here ? ` · agora no monitor ${here.numero}` : "");
+  $("#mon-auto").classList.toggle("primary", !p.monitor);
+}
+async function refreshMonitors() {
+  try {
+    const s = await api("/api/sistema");
+    reserveSupported = s.reservar_suportado !== false;
+    const changedList = JSON.stringify(s.monitores) !== JSON.stringify(monitors);
+    monitors = s.monitores || [];
+    if (cfg && changedList) { renderMonitors(); renderReserve(); }
+  } catch { /* painel fechado */ }
+}
+setInterval(() => { if ($("#tab-painel").classList.contains("active")) refreshMonitors(); }, 2000);
 
 // ---------- aba Conteúdo
 function newBlock() { return { itens: ["texto:Olá!"], efeito: "rolar", segundos: 5 }; }
@@ -764,6 +842,10 @@ async function loadIntegrations() {
   try {
     const s = await api("/api/integracoes");
     const cc = s.claude_code, cd = s.claude_desktop;
+    const acc = cc.conta;
+    $("#cl-account").innerHTML = acc && acc.email
+      ? `<b>${esc(acc.email)}</b>${acc.plano ? ` · plano <b>${esc(acc.plano)}</b>` : ""}${acc.organizacao && !acc.organizacao.includes(acc.email) ? ` · ${esc(acc.organizacao)}` : ""}`
+      : "Nenhuma conta logada no Claude Code (ou uso por chave de API).";
     badge($("#b-code"), cc.conectado, "Conectado", cc.cli ? "Não conectado" : "CLI não encontrada");
     $("#code-on").disabled = !cc.cli || !s.mcp_exe_existe;
     $("#code-off").style.display = cc.conectado ? "" : "none";
@@ -830,6 +912,8 @@ function renderClaude() {
   $("#cl-thresholds").oninput = e => { c.avisar_limite = e.target.value.split(/[,; ]+/).map(Number).filter(n => Number.isFinite(n) && n > 0 && n <= 100); changed(); };
   $("#cl-blink").checked = c.piscar_permissao;
   $("#cl-blink").onchange = e => { c.piscar_permissao = e.target.checked; changed(); };
+  $("#cl-detail").checked = c.detalhar;
+  $("#cl-detail").onchange = e => { c.detalhar = e.target.checked; changed(); };
   $("#cl-forget").value = c.esquecer_horas;
   $("#cl-forget").oninput = e => { c.esquecer_horas = Math.max(1, +e.target.value || 12); changed(); };
 }
@@ -844,7 +928,11 @@ async function refreshClaude() {
     const ss = c.sessoes || [];
     $("#cl-sessions").innerHTML = ss.length
       ? `<div class="sess">${ss.map(x => {
-          const tip = [x.modelo, x.contexto_pct != null ? "contexto " + Math.round(x.contexto_pct) + "%" : "", x.detalhe].filter(Boolean).join(" · ");
+          const tip = [
+            [x.modelo, x.contexto_pct != null ? "contexto " + Math.round(x.contexto_pct) + "%" : "", x.detalhe].filter(Boolean).join(" · "),
+            x.pedido ? "Pedido: " + x.pedido : "",
+            x.resposta ? "Resposta: " + x.resposta : "",
+          ].filter(Boolean).join("\n");
           return `<span class="${x.estado}" title="${esc(tip)}"><b>${esc(x.projeto)}</b> ${STATE_LABEL[x.estado] || x.estado}<small>desde ${esc(x.desde.slice(0, 5))}</small></span>`;
         }).join("")}</div>`
       : "Nenhuma sessão no momento. Elas aparecem quando o Claude Code é aberto (com os hooks instalados).";
@@ -857,7 +945,7 @@ async function refreshClaude() {
 setInterval(() => { if ($("#tab-conectar").classList.contains("active")) refreshClaude(); }, 3000);
 addCopyButtons();
 
-function renderAll() { renderPanel(); renderLines(); renderAgenda(); renderClaude(); renderTest(); }
+function renderAll() { refreshMonitors(); renderPanel(); renderLines(); renderAgenda(); renderClaude(); renderTest(); }
 loadSystem();
 
 $$("#tabs button").forEach(b => b.onclick = () => {

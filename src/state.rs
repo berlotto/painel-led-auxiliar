@@ -105,6 +105,10 @@ pub struct ClaudeSession {
     /// Último sinal recebido.
     pub seen: DateTime<Local>,
     pub detail: Option<String>,
+    /// Último pedido feito na sessão (UserPromptSubmit).
+    pub task: Option<String>,
+    /// Começo da última resposta do Claude (Stop).
+    pub summary: Option<String>,
     pub model: Option<String>,
     pub context_pct: Option<f32>,
     pub cost_usd: Option<f64>,
@@ -127,6 +131,18 @@ pub struct Limits {
     pub updated: i64,
 }
 
+/// Monitor visto pela janela (publicado para a tela de configurações).
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub struct MonitorInfo {
+    pub numero: usize,
+    pub largura: u32,
+    pub altura: u32,
+    pub x: i32,
+    pub y: i32,
+    pub principal: bool,
+    pub atual: bool,
+}
+
 #[derive(Default)]
 pub struct State {
     pub cpu: f32,
@@ -147,6 +163,7 @@ pub struct State {
     pub limits: Limits,
     /// Quantos limiares de aviso já foram avisados em cada janela (5 h, 7 dias).
     pub limit_alerted: [usize; 2],
+    pub monitors: Vec<MonitorInfo>,
 }
 
 impl State {

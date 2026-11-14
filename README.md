@@ -42,14 +42,14 @@ sudo apt install ./painel-led_X.Y.Z_amd64.deb
 
 Em outras distribuições, baixe o `.tar.gz`, descompacte e rode `./install.sh`. Ele instala em `~/.local`, sem root, e `./install.sh --remover` desfaz.
 
-O pacote precisa de GTK 3 e de `libayatana-appindicator3` (ou `libappindicator3`); o `.deb` já puxa as duas.
+O binário só depende da `libc` e das bibliotecas do X11 que todo desktop já tem.
 
 O que muda no Linux:
 - No WSL (WSLg) e com `PAINEL_LED_JANELA_NORMAL=1`, o painel usa uma janela comum, que aparece na barra de tarefas; nos demais ambientes ele fica fora dela.
 - No Wayland, o painel abre via XWayland. O Wayland não deixa uma janela se posicionar sozinha nem ficar sempre no topo; pelo XWayland as duas coisas funcionam. Para forçar o Wayland nativo, rode com `PAINEL_LED_WAYLAND=1`.
-- O ícone na bandeja usa AppIndicator. No GNOME, isso depende da extensão AppIndicator, que já vem no Ubuntu. Sem bandeja, o painel funciona do mesmo jeito: o clique direito abre as configurações.
+- O ícone na bandeja usa o protocolo StatusNotifierItem, via D-Bus. O KDE, o XFCE e o Cinnamon mostram direto. O GNOME precisa da extensão AppIndicator, que já vem no Ubuntu. Sem bandeja, o painel funciona do mesmo jeito: o clique direito abre as configurações.
 - A tela de configurações abre em modo app do Chrome, Chromium, Edge ou Brave, se houver algum; senão, no navegador padrão.
-- A posição "base" usa a altura total do monitor e pode ficar atrás de um dock ou painel do sistema. Nesse caso, use "topo" ou "livre".
+- A posição "base" usa a altura total do monitor e pode ficar atrás de um dock ou painel do sistema. Nesse caso, use "topo" ou "livre", ou ligue **Reservar espaço**.
 - O Claude Desktop não tem versão oficial para Linux; o MCP funciona no Claude Code.
 
 ### Depois de instalar
@@ -58,12 +58,7 @@ Abra as configurações (clique direito no painel) e use a aba **Conectar ao Cla
 
 ### Compilar do código
 
-No Linux, instale antes as bibliotecas de desenvolvimento e use o `cargo`:
-
-```bash
-sudo apt install libgtk-3-dev libayatana-appindicator3-dev libxdo-dev
-cargo build --release
-```
+No Linux, basta o `cargo build --release`. Não precisa de bibliotecas de desenvolvimento.
 
 No Windows:
 
@@ -112,7 +107,17 @@ Cada push de tag `v*` cria uma Release com os quatro arquivos. Um push na `main`
 
 O ícone na bandeja tem: Configurações, Mostrar/Ocultar, Limpar mensagens, Iniciar com o sistema, Editar arquivo de configuração e Sair.
 
-Se você soltar o painel em outro monitor, ele recalcula a largura para esse monitor.
+### Monitor e espaço na tela
+
+Na aba Painel, os seus monitores aparecem desenhados lado a lado.
+- Clicar num deles manda o painel para lá na hora.
+- **Automático** deixa o painel onde você arrastar.
+- Com um monitor escolhido, arrastar o painel para outro monitor também troca a escolha.
+- Em qualquer caso, a largura é recalculada para o monitor de destino.
+
+Com a posição Topo ou Base, a opção **Reservar espaço** transforma o painel numa barra do sistema. O espaço dele sai da área útil do monitor escolhido, e janelas maximizadas param antes do painel, em vez de ficarem por baixo. Os outros monitores não mudam.
+- **No Windows**, usa a mesma API da barra de tarefas (AppBar). Se o painel fechar, até à força, o Windows devolve o espaço sozinho.
+- **No Linux**, usa `_NET_WM_STRUT_PARTIAL` numa janela do tipo Dock, como os painéis e docks do sistema. Funciona no X11, inclusive no XWayland; no Wayland nativo, não.
 
 ## Configurações
 
@@ -132,7 +137,7 @@ Na aba Conteúdo você monta cada linha em blocos lado a lado. Cada bloco mostra
 | `rede` | latência atual ou `OFFLINE` |
 | `historico` | 24 h de conexão em 48 colunas de 30 min |
 | `agenda` | até 3 próximos compromissos |
-| `sessoes` | sessões do Claude Code: ▶ trabalhando, `!` precisa de você, ✓ terminou |
+| `sessoes` | `CLAUDE` e as sessões do Claude Code pelo nome do projeto: ▶ trabalhando, `!` precisa de você (pisca), ✓ terminou, • aberta |
 | `limites` | uso do plano do Claude nas janelas de 5 h e 7 dias |
 | `texto:...` | um texto fixo seu |
 | `var:nome` | texto que scripts ou o Claude definem pela API |
@@ -148,6 +153,8 @@ linhas = 2
 tamanho_led = 6
 posicao = "livre"      # "topo", "base" ou "livre"
 linha_mensagens = 2    # onde aparecem os avisos do Claude, da agenda e da API
+monitor = 0            # 0 = onde você arrastar; 1, 2... = monitor fixo (da esquerda para a direita)
+reservar_espaco = false # com topo/base: janelas maximizadas não cobrem o painel
 
 [[linha]]
 blocos = [
@@ -167,6 +174,7 @@ avisar_minutos = [10, 0]
 avisar_limite = [80, 95]
 piscar_permissao = true
 esquecer_horas = 12
+detalhar = true        # "terminou: <resumo do que o Claude fez>"
 ```
 
 ### Google Agenda
@@ -183,7 +191,7 @@ Não há teste de velocidade. A cada 30 s o painel abre uma conexão TCP com 1.1
 
 ## Claude
 
-A aba Conectar ao Claude faz toda a ligação com um clique e mostra o estado de cada parte. Ela também traz a configuração manual para quem preferir.
+A aba Conectar ao Claude faz toda a ligação com um clique e mostra o estado de cada parte, inclusive a conta logada no Claude Code (e-mail e plano, lidos de `~/.claude.json`). Ela também traz a configuração manual para quem preferir.
 
 ![Aba Conectar ao Claude: MCP no Claude Code e no Claude Desktop, e as ferramentas disponíveis](docs/img/config-conectar.png)
 
@@ -213,7 +221,7 @@ São dois mecanismos do próprio Claude Code, que a aba instala em `~/.claude/se
 
 **Hooks.** Avisam o painel quando uma sessão abre, recebe um pedido, usa uma ferramenta, pede permissão, termina ou fecha. Daí saem o item `sessoes` e os avisos:
 - pedido de permissão pisca em âmbar;
-- término aparece em verde.
+- término aparece em verde, com o começo do resumo final do Claude: `CLAUDE [api]: terminou: Corrigi os 3 testes de login.` Com `detalhar = false`, mostra só "terminou - sua vez!".
 
 **Statusline.** Recebe do Claude Code o uso do plano (`rate_limits`, janelas de 5 h e 7 dias) e repassa ao painel.
 - No terminal ela mostra `Opus 5.5 · contexto 19% · 5h 53% (renova 16:20) · 7d 12%`.
@@ -265,7 +273,7 @@ A API só aceita chamadas da própria máquina:
 
 ```
 src/main.rs           janela, desenho dos LEDs, mouse
-src/tray.rs           ícone na bandeja (no Linux, numa thread com GTK)
+src/tray.rs           ícone na bandeja (no Linux, StatusNotifierItem via D-Bus)
 src/render.rs         monta cada quadro a partir da configuração e do estado
 src/font.rs           fonte 5x7 com acentos
 src/sources.rs        CPU/RAM, pings, servidor HTTP
@@ -273,11 +281,16 @@ src/agenda.rs         leitura de iCal, recorrência, avisos
 src/claude.rs         sessões (hooks) e limites (statusline)
 src/integrations.rs   ligar e desligar MCP, hooks e statusline
 src/autostart.rs      iniciar com Windows, Linux ou macOS
+src/screen.rs         monitores e reserva de espaço (AppBar no Windows, strut no X11)
 src/ui/config.html    tela de configurações
 src/bin/painel-led-mcp.rs   servidor MCP
 ```
 
 `cargo test` roda os testes do parser de configuração, da agenda e do rastreamento de sessões e limites.
+
+## Mudanças
+
+O histórico de cada versão está no [CHANGELOG](CHANGELOG.md).
 
 ## Licença
 

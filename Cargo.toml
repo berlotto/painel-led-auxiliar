@@ -1,6 +1,6 @@
 [package]
 name = "painel-led"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 default-run = "painel-led"
 description = "Painel de LED virtual sempre no topo: hora, sistema, internet, agenda e Claude Code"
@@ -18,22 +18,26 @@ softbuffer = "0.4.8"
 sysinfo = "0.40.3"
 tiny_http = "0.12.0"
 toml = "1.2.1"
-tray-icon = "0.26.1"
+# No Linux, o backend "ksni" fala com a bandeja direto pelo D-Bus (StatusNotifierItem), sem GTK:
+# evita o glib 0.18 (RUSTSEC-2024-0429) e as dependências de GTK/AppIndicator.
+tray-icon = { version = "0.26.1", default-features = false, features = ["ksni"] }
 ureq = "3.5.2"
-winit = "0.30.13"
+# Sem "wayland-csd-adwaita" (bordas desenhadas no Wayland): o painel não tem bordas, e esse
+# recurso puxava o ttf-parser, sem manutenção (RUSTSEC-2026-0192).
+winit = { version = "0.30.13", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-dlopen"] }
 
 [build-dependencies]
 winresource = "0.1"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_Graphics_Dwm", "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_Registry"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Graphics_Dwm", "Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_Registry", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-# Mesma versão usada pelo tray-icon: o ícone da bandeja no Linux precisa de GTK.
-gtk = "0.18"
+# Reservar a faixa da tela no X11 (_NET_WM_STRUT_PARTIAL). Mesma versão que o winit já usa.
+x11rb = "0.13"
 
 # Pacote .deb (cargo deb). As dependências de bibliotecas são calculadas sozinhas ($auto);
-# o appindicator é carregado em tempo de execução, por isso vai à parte.
+# as do X11 são carregadas em tempo de execução pelo winit, por isso vão à parte.
 [package.metadata.deb]
 name = "painel-led"
 maintainer = "Sérgio Berlotto Jr"
@@ -41,7 +45,7 @@ copyright = "2026, Sérgio Berlotto Jr"
 extended-description = "Letreiro de LED virtual sempre no topo: hora, data, CPU/RAM, estabilidade da internet, Google Agenda, sessões e limites do Claude Code, servidor MCP e API HTTP local."
 section = "utils"
 priority = "optional"
-depends = "$auto, libayatana-appindicator3-1 | libappindicator3-1"
+depends = "$auto, libx11-6, libxcursor1, libxi6, libxrandr2, libxkbcommon-x11-0"
 recommends = "curl"
 assets = [
   ["target/release/painel-led", "usr/bin/", "755"],

@@ -7,6 +7,7 @@ mod config;
 mod font;
 mod integrations;
 mod render;
+mod screen;
 mod sources;
 mod state;
 mod tray;
@@ -120,11 +121,13 @@ fn save_pos(p: PhysicalPosition<i32>) {
     let _ = std::fs::write(pos_path(), serde_json::to_string(&SavedPos { x: p.x, y: p.y }).unwrap());
 }
 
+fn contains(m: &MonitorHandle, p: PhysicalPosition<i32>) -> bool {
+    let (mp, ms) = (m.position(), m.size());
+    p.x >= mp.x && p.y >= mp.y && p.x < mp.x + ms.width as i32 && p.y < mp.y + ms.height as i32
+}
+
 fn monitor_at(el: &ActiveEventLoop, p: PhysicalPosition<i32>) -> Option<MonitorHandle> {
-    el.available_monitors().find(|m| {
-        let (mp, ms) = (m.position(), m.size());
-        p.x >= mp.x && p.y >= mp.y && p.x < mp.x + ms.width as i32 && p.y < mp.y + ms.height as i32
-    })
+    el.available_monitors().find(|m| contains(m, p))
 }
 
 // ---------------------------------------------------------------- desenho em software
@@ -356,19 +359,26 @@ struct App {
     last_drawn: Option<Drawn>,
     tray: Option<Tray>,
     visible: bool,
+    /// Faixa da tela reservada (posição topo/base com "reservar espaço").
+    reserve: screen::Reserve,
+    /// Se a janela atual foi criada como Dock (Linux, para reservar espaço).
+    window_dock: bool,
 }
 
 impl App {
-    fn set_visible(&mut self, visible: bool) {
+    fn set_visible(&mut self, el: &ActiveEventLoop, visible: bool) {
         self.visible = visible;
-        if let Some(w) = &self.window {
+        if let Some(w) = self.window.clone() {
+            if !visible {
+                self.reserve.release(&w);
+            }
             w.set_visible(visible);
         }
         if let Some(t) = &self.tray {
             t.set_visible(visible);
         }
         if visible {
-            self.redraw_now();
+            self.relayout(el);
         }
     }
 
@@ -388,7 +398,7 @@ impl App {
         if id == &ids.settings {
             open_settings();
         } else if id == &ids.toggle {
-            self.set_visible(!self.visible);
+            self.set_visible(el, !self.visible);
         } else if id == &ids.clear {
             self.clear_messages();
         } else if id == &ids.file {
@@ -436,16 +446,55 @@ impl App {
         }
     }
 
-    /// Recalcula tamanho/posição conforme a configuração e o monitor atual.
+    /// Monitor onde o painel deve ficar: o escolhido na configuração ou, no automático,
+    /// onde a janela está (ou estava na última execução).
+    fn target_monitor(&self, el: &ActiveEventLoop) -> Option<MonitorHandle> {
+        let list = screen::sorted_monitors(el);
+        let n = self.cfg.painel.monitor;
+        if n > 0 {
+            if let Some(m) = list.get(n - 1) {
+                return Some(m.clone());
+            }
+        }
+        let window = self.window.as_ref();
+        let current = window.and_then(|w| w.outer_position().ok());
+        window
+            .and_then(|w| w.current_monitor())
+            .or_else(|| current.and_then(|p| monitor_at(el, p)))
+            .or_else(|| load_pos().and_then(|p| monitor_at(el, p)))
+            .or_else(|| el.primary_monitor())
+            .or_else(|| list.first().cloned())
+    }
+
+    fn publish_monitors(&self, el: &ActiveEventLoop) {
+        let current = self.window.as_ref().and_then(|w| w.current_monitor());
+        let list = screen::describe(el, current.as_ref());
+        let mut s = self.state.lock().unwrap();
+        if s.monitors != list {
+            s.monitors = list;
+        }
+    }
+
+    /// Recalcula tamanho/posição conforme a configuração e o monitor alvo.
     fn relayout(&mut self, el: &ActiveEventLoop) {
         let Some(window) = self.window.clone() else { return };
+        let Some(mon) = self.target_monitor(el) else { return };
+        // Posição livre: mantém onde está se continuar no monitor alvo.
+        let keep = window
+            .outer_position()
+            .ok()
+            .filter(|p| contains(&mon, *p))
+            .or_else(|| load_pos().filter(|p| contains(&mon, *p)));
+        let mut g = geometry(&self.cfg.painel, &mon, keep);
+        if self.cfg.painel.reserves_space() && self.visible {
+            let top = self.cfg.painel.posicao == Position::Topo;
+            if let Some(y) = self.reserve.apply(&window, &mon, top, g.size.height) {
+                g.pos.y = y;
+            }
+        } else {
+            self.reserve.release(&window);
+        }
         let current = window.outer_position().ok();
-        let mon = window
-            .current_monitor()
-            .or_else(|| current.and_then(|p| monitor_at(el, p)))
-            .or_else(|| el.primary_monitor());
-        let Some(mon) = mon else { return };
-        let g = geometry(&self.cfg.painel, &mon, current);
         if self.geom.map(|o| o.pitch) != Some(g.pitch) {
             self.sprites = Sprites::new(g.pitch);
         }
@@ -458,6 +507,64 @@ impl App {
         }
         self.resize_surface();
         self.redraw_now();
+        self.publish_monitors(el);
+    }
+
+    /// Cria a janela do painel (também usada para recriá-la no Linux ao ligar/desligar a reserva).
+    fn create_window(&mut self, el: &ActiveEventLoop) {
+        let Some(mon) = self.target_monitor(el) else {
+            el.exit();
+            return;
+        };
+        let saved = load_pos().filter(|p| contains(&mon, *p));
+        let g = geometry(&self.cfg.painel, &mon, saved);
+        let dock = self.cfg.painel.reserves_space();
+
+        let attrs = Window::default_attributes()
+            .with_title("Painel LED")
+            .with_decorations(false)
+            .with_resizable(false)
+            .with_window_level(WindowLevel::AlwaysOnTop)
+            .with_inner_size(g.size)
+            .with_position(g.pos);
+        #[cfg(windows)]
+        let attrs = {
+            use winit::platform::windows::WindowAttributesExtWindows;
+            attrs.with_skip_taskbar(true)
+        };
+        #[cfg(target_os = "linux")]
+        let attrs = {
+            use winit::platform::x11::{WindowAttributesExtX11, WindowType};
+            // "Dock" para reservar espaço; "Utility" fica fora da barra de tarefas no GNOME e no KDE.
+            // O WSLg (e algum gerenciador de janelas que trate mal esses tipos) esconde a janela:
+            // nesses casos usa uma janela comum.
+            let normal = std::env::var_os("WSL_DISTRO_NAME").is_some()
+                || std::env::var_os("PAINEL_LED_JANELA_NORMAL").is_some();
+            let kind = if normal {
+                WindowType::Normal
+            } else if dock {
+                WindowType::Dock
+            } else {
+                WindowType::Utility
+            };
+            attrs.with_x11_window_type(vec![kind]).with_name("painel-led", "painel-led")
+        };
+        let window = match el.create_window(attrs) {
+            Ok(w) => Rc::new(w),
+            Err(_) => {
+                el.exit();
+                return;
+            }
+        };
+        round_corners(&window);
+        let ctx = softbuffer::Context::new(window.clone()).expect("softbuffer");
+        let surface = Surface::new(&ctx, window.clone()).expect("surface");
+        self.sprites = Sprites::new(g.pitch);
+        self.geom = Some(g);
+        self.surface = Some(surface);
+        self.window = Some(window);
+        self.window_dock = dock;
+        self.relayout(el);
     }
 
     fn check_config(&mut self, el: &ActiveEventLoop) {
@@ -465,6 +572,12 @@ impl App {
         // Mantém a marcação da bandeja em sincronia (a tela de configurações também pode mudar isso).
         if let Some(t) = &self.tray {
             t.set_autostart(autostart::is_enabled());
+        }
+        // Monitor conectado/desconectado: refaz o layout.
+        let before = self.state.lock().unwrap().monitors.len();
+        self.publish_monitors(el);
+        if self.state.lock().unwrap().monitors.len() != before && before > 0 {
+            self.relayout(el);
         }
         let m = config::modified();
         if m == self.cfg_mtime {
@@ -481,7 +594,14 @@ impl App {
                 }
                 self.cfg = new;
                 self.composer.reset();
-                if relayout {
+                if cfg!(target_os = "linux") && self.cfg.painel.reserves_space() != self.window_dock {
+                    // No X11, o tipo da janela (Dock) só vale na criação: recria a janela.
+                    if let Some(w) = self.window.take() {
+                        self.reserve.release(&w);
+                    }
+                    self.surface = None;
+                    self.create_window(el);
+                } else if relayout {
                     self.relayout(el);
                 } else {
                     self.redraw_now();
@@ -533,58 +653,17 @@ impl ApplicationHandler<UserEvent> for App {
         if self.window.is_some() {
             return;
         }
-        // Posição salva só vale se ainda cair dentro de algum monitor.
-        let saved = load_pos().filter(|p| monitor_at(el, *p).is_some());
-        let mon = saved
-            .and_then(|p| monitor_at(el, p))
-            .or_else(|| el.primary_monitor())
-            .or_else(|| el.available_monitors().next());
-        let Some(mon) = mon else {
-            el.exit();
-            return;
-        };
-        let g = geometry(&self.cfg.painel, &mon, saved);
+        self.create_window(el);
+        if self.window.is_some() {
+            self.tray = Tray::new(autostart::is_enabled());
+        }
+    }
 
-        let attrs = Window::default_attributes()
-            .with_title("Painel LED")
-            .with_decorations(false)
-            .with_resizable(false)
-            .with_window_level(WindowLevel::AlwaysOnTop)
-            .with_inner_size(g.size)
-            .with_position(g.pos);
-        #[cfg(windows)]
-        let attrs = {
-            use winit::platform::windows::WindowAttributesExtWindows;
-            attrs.with_skip_taskbar(true)
-        };
-        #[cfg(target_os = "linux")]
-        let attrs = {
-            use winit::platform::x11::{WindowAttributesExtX11, WindowType};
-            // "Utility" fica fora da barra de tarefas no GNOME e no KDE (só vale no X11).
-            // O WSLg (e algum gerenciador de janelas que trate mal esse tipo) esconde a janela:
-            // nesses casos usa uma janela comum.
-            let normal = std::env::var_os("WSL_DISTRO_NAME").is_some()
-                || std::env::var_os("PAINEL_LED_JANELA_NORMAL").is_some();
-            let kind = if normal { WindowType::Normal } else { WindowType::Utility };
-            attrs.with_x11_window_type(vec![kind]).with_name("painel-led", "painel-led")
-        };
-        let window = match el.create_window(attrs) {
-            Ok(w) => Rc::new(w),
-            Err(_) => {
-                el.exit();
-                return;
-            }
-        };
-        round_corners(&window);
-        let ctx = softbuffer::Context::new(window.clone()).expect("softbuffer");
-        let surface = Surface::new(&ctx, window.clone()).expect("surface");
-        self.sprites = Sprites::new(g.pitch);
-        self.geom = Some(g);
-        self.surface = Some(surface);
-        self.window = Some(window);
-        self.tray = Tray::new(autostart::is_enabled());
-        self.resize_surface();
-        self.redraw_now();
+    fn exiting(&mut self, _el: &ActiveEventLoop) {
+        // Devolve a faixa reservada antes de fechar.
+        if let Some(w) = &self.window {
+            self.reserve.release(w);
+        }
     }
 
     fn window_event(&mut self, el: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -656,6 +735,17 @@ impl ApplicationHandler<UserEvent> for App {
         if let Some(t) = self.pending_snap {
             if t.elapsed() >= Duration::from_millis(400) {
                 self.pending_snap = None;
+                if self.cfg.painel.monitor > 0 {
+                    let landed = self.window.as_ref().and_then(|w| w.current_monitor());
+                    let list = screen::sorted_monitors(el);
+                    if let Some(n) = landed.and_then(|m| screen::number_of(&list, &m)) {
+                        if n != self.cfg.painel.monitor {
+                            self.cfg.painel.monitor = n;
+                            let _ = config::save(&self.cfg);
+                            self.cfg_mtime = config::modified();
+                        }
+                    }
+                }
                 self.relayout(el);
                 if let Some(g) = self.geom {
                     save_pos(g.pos);
@@ -766,6 +856,8 @@ fn main() {
         pending_snap: None,
         last_drawn: None,
         tray: None,
+        reserve: screen::Reserve::default(),
+        window_dock: false,
         visible: true,
     };
     let _ = event_loop.run_app(&mut app);

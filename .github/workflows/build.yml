@@ -72,16 +72,16 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Dependências
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libgtk-3-dev libayatana-appindicator3-dev libxdo-dev
-
       - name: Rust
         run: rustup toolchain install stable --profile minimal && rustup default stable
 
       - name: Testes
         run: cargo test --release
+
+      - name: Auditoria de dependências (cargo audit)
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit
 
       - name: Versão
         run: |
@@ -120,6 +120,8 @@ jobs:
     needs: [windows, linux]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v5
+
       - uses: actions/download-artifact@v5
         with:
           path: dist
@@ -142,9 +144,14 @@ jobs:
           \`\`\`
 
           **Outras distribuições**: baixe o \`.tar.gz\`, descompacte e rode \`./install.sh\` (instala em ~/.local, sem root).
-          Precisa de GTK 3 e libayatana-appindicator3 (ou libappindicator3).
 
           Depois de instalar, clique com o botão direito no painel (ou no ícone da bandeja) → **Configurações** → aba **Conectar ao Claude**.
           EOF
           sed -i 's/^          //' notes.md
+          # O que mudou: trecho da versão no CHANGELOG.md.
+          awk -v v="$v" 'index($0, "## [" v "]") == 1 {on=1; next} on && index($0, "## [") == 1 {exit} on' CHANGELOG.md > changes.md
+          if [ -s changes.md ]; then
+            { echo; echo "## O que mudou"; echo; } >> notes.md
+            cat changes.md >> notes.md
+          fi
           gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "Painel LED $v" --notes-file notes.md --generate-notes

@@ -1,7 +1,6 @@
 //! Ícone na bandeja do sistema.
-//! Windows/macOS: o menu vive na thread da janela.
-//! Linux: o tray-icon precisa de GTK, então o menu vive numa thread própria rodando `gtk::main`;
-//! a janela só guarda os ids dos itens e manda comandos por um canal.
+//! Windows/macOS: usa a bandeja nativa, na thread da janela.
+//! Linux: usa o backend "ksni" (StatusNotifierItem via D-Bus, sem GTK), que roda numa thread própria.
 
 use tray_icon::menu::{CheckMenuItem, Menu, MenuId, MenuItem, PredefinedMenuItem};
 use tray_icon::{TrayIcon, TrayIconBuilder};
@@ -112,72 +111,22 @@ fn build(autostart_on: bool) -> Option<(Items, Ids)> {
 
 pub struct Tray {
     pub ids: Ids,
-    #[cfg(not(target_os = "linux"))]
     items: Items,
-    #[cfg(target_os = "linux")]
-    tx: std::sync::mpsc::Sender<Cmd>,
-}
-
-#[cfg(target_os = "linux")]
-enum Cmd {
-    Visible(bool),
-    Autostart(bool),
 }
 
 impl Tray {
-    #[cfg(not(target_os = "linux"))]
+    /// Sem bandeja no ambiente, devolve `None` e o painel funciona sem o ícone
+    /// (as configurações abrem pelo clique direito).
     pub fn new(autostart_on: bool) -> Option<Tray> {
         let (items, ids) = build(autostart_on)?;
         Some(Tray { ids, items })
     }
 
-    /// Sobe uma thread com GTK para o ícone. Sem GTK ou sem bandeja no ambiente, devolve `None`
-    /// e o painel funciona sem o ícone (as configurações abrem pelo clique direito).
-    #[cfg(target_os = "linux")]
-    pub fn new(autostart_on: bool) -> Option<Tray> {
-        use std::sync::mpsc;
-        let (ids_tx, ids_rx) = mpsc::channel::<Option<Ids>>();
-        let (tx, rx) = mpsc::channel::<Cmd>();
-        std::thread::spawn(move || {
-            if gtk::init().is_err() {
-                let _ = ids_tx.send(None);
-                return;
-            }
-            let Some((items, ids)) = build(autostart_on) else {
-                let _ = ids_tx.send(None);
-                return;
-            };
-            let _ = ids_tx.send(Some(ids));
-            gtk::glib::timeout_add_local(std::time::Duration::from_millis(200), move || {
-                loop {
-                    match rx.try_recv() {
-                        Ok(Cmd::Visible(v)) => items.set_visible(v),
-                        Ok(Cmd::Autostart(on)) => items.set_autostart(on),
-                        Err(mpsc::TryRecvError::Empty) => return gtk::glib::ControlFlow::Continue,
-                        Err(mpsc::TryRecvError::Disconnected) => {
-                            gtk::main_quit();
-                            return gtk::glib::ControlFlow::Break;
-                        }
-                    }
-                }
-            });
-            gtk::main();
-        });
-        let ids = ids_rx.recv().ok()??;
-        Some(Tray { ids, tx })
-    }
-
     pub fn set_visible(&self, visible: bool) {
-        #[cfg(not(target_os = "linux"))]
         self.items.set_visible(visible);
-        #[cfg(target_os = "linux")]
-        let _ = self.tx.send(Cmd::Visible(visible));
     }
 
     pub fn set_autostart(&self, on: bool) {
-        #[cfg(not(target_os = "linux"))]
         self.items.set_autostart(on);
-        #[cfg(target_os = "linux")]
-        let _ = self.tx.send(Cmd::Autostart(on));
     }
 }

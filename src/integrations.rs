@@ -110,6 +110,32 @@ fn statusline_cmd(settings: &Option<Value>) -> Option<String> {
     settings.as_ref()?.get("statusLine")?.get("command")?.as_str().map(str::to_string)
 }
 
+/// Conta logada no Claude Code (campo `oauthAccount` de ~/.claude.json). Só lê dados de
+/// identificação e plano; nenhum token fica nesse arquivo.
+fn claude_account() -> Value {
+    let Some(acc) = read_json(&claude_code_config()).and_then(|v| v.get("oauthAccount").cloned()) else {
+        return Value::Null;
+    };
+    let get = |k: &str| acc.get(k).and_then(|x| x.as_str()).filter(|x| !x.is_empty()).map(str::to_string);
+    let tier = get("userRateLimitTier").or_else(|| get("organizationRateLimitTier")).unwrap_or_default();
+    let plano = match get("organizationType").as_deref() {
+        Some("claude_max") if tier.contains("20x") => "Max 20x".to_string(),
+        Some("claude_max") if tier.contains("5x") => "Max 5x".to_string(),
+        Some("claude_max") => "Max".to_string(),
+        Some("claude_pro") => "Pro".to_string(),
+        Some("claude_team") => "Team".to_string(),
+        Some("claude_enterprise") => "Enterprise".to_string(),
+        Some(other) => other.trim_start_matches("claude_").to_string(),
+        None => String::new(),
+    };
+    json!({
+        "email": get("emailAddress"),
+        "nome": get("displayName").or_else(|| get("fullName")),
+        "organizacao": get("organizationName"),
+        "plano": (!plano.is_empty()).then_some(plano),
+    })
+}
+
 pub fn status() -> Value {
     let mcp = mcp_exe();
     let desktop = desktop_config();
@@ -120,6 +146,7 @@ pub fn status() -> Value {
         "mcp_exe": mcp.display().to_string(),
         "mcp_exe_existe": mcp.is_file(),
         "claude_code": {
+            "conta": claude_account(),
             "cli": claude_cli().map(|p| p.display().to_string()),
             "conectado": has_mcp(&read_json(&claude_code_config())),
         },

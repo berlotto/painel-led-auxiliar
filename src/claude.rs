@@ -32,6 +32,44 @@ fn clean(text: &str) -> String {
     t.chars().take(200).collect()
 }
 
+/// Primeira frase útil de um texto em markdown, com no máximo `max` caracteres.
+/// Ex.: "## Pronto" + "Corrigi os **3 testes** de login. Também..." → "Corrigi os 3 testes de login."
+pub fn summarize(text: &str, max: usize) -> Option<String> {
+    let useful = |l: &&str| l.chars().filter(|c| c.is_alphanumeric()).count() >= 3;
+    let strip = |l: &str| l.trim().trim_start_matches(['#', '>', '-', '*', ' ']).trim().to_string();
+    // Prefere a primeira linha de texto; um título ("## Pronto") só se não houver outra.
+    let lines: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.starts_with("```")).collect();
+    let line = lines
+        .iter()
+        .filter(|l| !l.starts_with('#'))
+        .map(|l| strip(l))
+        .find(|l| useful(&l.as_str()))
+        .or_else(|| lines.iter().map(|l| strip(l)).find(|l| useful(&l.as_str())))?;
+    // Tira marcação e troca caracteres que a fonte do painel não tem.
+    let mut t: String = line
+        .chars()
+        .filter(|c| !matches!(c, '*' | '`' | '_'))
+        .map(|c| match c {
+            '…' => '.',
+            '—' | '–' => '-',
+            '“' | '”' => '"',
+            '‘' | '’' => '\'',
+            c => c,
+        })
+        .collect();
+    // Termina na primeira frase, se ela couber.
+    if let Some(i) = t.find(". ").filter(|&i| i + 1 <= max) {
+        t.truncate(i + 1);
+    }
+    t = t.split_whitespace().collect::<Vec<_>>().join(" ");
+    if t.chars().count() > max {
+        let cut: String = t.chars().take(max).collect();
+        let cut = cut.rsplit_once(' ').map(|(a, _)| a.to_string()).unwrap_or(cut);
+        t = format!("{}...", cut.trim_end_matches([',', ';', ':', ' ']));
+    }
+    Some(t)
+}
+
 /// Encontra (ou cria) a sessão. Sem `session_id`, usa a pasta como identificador.
 fn session<'a>(st: &'a mut State, id: &str, cwd: Option<&str>) -> &'a mut ClaudeSession {
     let now = Local::now();
@@ -51,6 +89,8 @@ fn session<'a>(st: &'a mut State, id: &str, cwd: Option<&str>) -> &'a mut Claude
                 since: now,
                 seen: now,
                 detail: None,
+                task: None,
+                summary: None,
                 model: None,
                 context_pct: None,
                 cost_usd: None,
@@ -97,6 +137,7 @@ pub fn handle_hook(st: &mut State, body: &str) -> Option<Message> {
     let cwd = str_at(&v, &["cwd"]);
     let id = str_at(&v, &["session_id"]).or_else(|| cwd.clone()).unwrap_or_else(|| "claude".into());
     let blink = st.claude_cfg.piscar_permissao;
+    let detail = st.claude_cfg.detalhar;
 
     if event == "SessionEnd" {
         st.sessions.retain(|x| x.id != id);
@@ -119,13 +160,28 @@ pub fn handle_hook(st: &mut State, body: &str) -> Option<Message> {
             }
             None
         }
-        "UserPromptSubmit" | "PostToolUse" | "PreToolUse" => {
+        "UserPromptSubmit" => {
+            if let Some(p) = str_at(&v, &["prompt"]) {
+                sess.task = summarize(&p, 120);
+                sess.summary = None;
+            }
+            set_status(sess, SessionStatus::Trabalhando, None);
+            None
+        }
+        "PostToolUse" | "PreToolUse" => {
             set_status(sess, SessionStatus::Trabalhando, None);
             None
         }
         "Stop" => {
+            sess.summary = str_at(&v, &["last_assistant_message"]).and_then(|m| summarize(&m, 120));
             set_status(sess, SessionStatus::Concluida, None);
-            Some(msg("terminou - sua vez!".into(), Rgb::GREEN, Effect::Rolar))
+            // Com detalhe: o resumo da resposta; sem resposta, o pedido que foi atendido.
+            let text = match (detail, &sess.summary, &sess.task) {
+                (true, Some(s), _) => format!("terminou: {s}"),
+                (true, None, Some(t)) => format!("terminou \"{t}\""),
+                _ => "terminou - sua vez!".into(),
+            };
+            Some(msg(text, Rgb::GREEN, Effect::Rolar))
         }
         "StopFailure" => {
             let why = str_at(&v, &["error"]).or_else(|| str_at(&v, &["message"]));
@@ -310,6 +366,8 @@ pub fn to_json(st: &State) -> Value {
                 "estado": x.status,
                 "desde": x.since.format("%H:%M:%S").to_string(),
                 "detalhe": x.detail,
+                "pedido": x.task,
+                "resposta": x.summary,
                 "modelo": x.model,
                 "contexto_pct": x.context_pct,
                 "custo_usd": x.cost_usd,
@@ -353,10 +411,20 @@ mod tests {
         assert!(m.text.contains("Bash"), "{}", m.text);
         handle_hook(&mut st, &hook("PostToolUse", ""));
         assert_eq!(st.sessions[0].status, SessionStatus::Trabalhando);
-        assert!(handle_hook(&mut st, &hook("Stop", "")).is_some());
+        let last = r###","last_assistant_message":"## Pronto\n\nCorrigi os **3 testes** de login. Também ajustei o CI.""###;
+        let m = handle_hook(&mut st, &hook("Stop", last)).unwrap();
+        assert_eq!(m.text, "CLAUDE [api]: terminou: Corrigi os 3 testes de login.");
         assert_eq!(st.sessions[0].status, SessionStatus::Concluida);
         handle_hook(&mut st, &hook("SessionEnd", ""));
         assert!(st.sessions.is_empty());
+    }
+
+    #[test]
+    fn summarize_cuts_long_text() {
+        let long = "Refatorei o módulo de autenticação inteiro para usar tokens rotativos com expiração curta e revalidação";
+        let s = summarize(long, 60).unwrap();
+        assert!(s.ends_with("...") && s.chars().count() <= 63, "{s}");
+        assert_eq!(summarize("```\n", 60), None);
     }
 
     #[test]

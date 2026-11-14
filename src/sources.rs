@@ -402,6 +402,8 @@ pub fn spawn_http(server: Server, state: Shared, wake: Wake, token: String) {
                         "iniciar_com_sistema": crate::autostart::is_enabled(),
                         "sistema": std::env::consts::OS,
                         "executavel": std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_default(),
+                        "monitores": state.lock().unwrap().monitors.clone(),
+                        "reservar_suportado": cfg!(any(windows, target_os = "linux")),
                     });
                     (200, reply.to_string())
                 }

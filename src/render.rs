@@ -187,10 +187,14 @@ fn icon(bits: &[u8], color: Rgb) -> Vec<Col> {
 
 /// Sessões do Claude Code: "api ▶  web !  docs ✓". A que precisa de você pisca.
 fn sessions(s: &State, on: bool, blinking: &mut bool) -> Vec<Vec<Col>> {
+    const LABEL: Rgb = Rgb(0, 150, 180);
     if s.sessions.is_empty() {
-        return vec![text("SEM SESSÕES", Rgb(110, 110, 110))];
+        let mut out = text("CLAUDE ", LABEL);
+        out.extend(text("sem sessões", Rgb(110, 110, 110)));
+        return vec![out];
     }
-    let mut out = Vec::new();
+    // "CLAUDE" na frente deixa claro que a lista é das sessões do Claude Code.
+    let mut out = text("CLAUDE ", LABEL);
     for (i, x) in s.sessions.iter().enumerate() {
         if i > 0 {
             out.extend(gap(6));
@@ -202,7 +206,11 @@ fn sessions(s: &State, on: bool, blinking: &mut bool) -> Vec<Vec<Col>> {
             SessionStatus::Concluida => (Rgb::GREEN, &ICON_CHECK),
             SessionStatus::Aberta => (Rgb(130, 130, 130), &ICON_DOT),
         };
-        let name: String = x.project.chars().take(14).collect();
+        let name: String = if x.project.chars().count() > 16 {
+            format!("{}..", x.project.chars().take(14).collect::<String>())
+        } else {
+            x.project.clone()
+        };
         let mut entry = text(&name, color);
         entry.push(BLANK);
         entry.extend(icon(ic, color));

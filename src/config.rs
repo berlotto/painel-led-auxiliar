@@ -17,6 +17,8 @@ posicao = "livre"      # "topo", "base" ou "livre" (arraste; a posição é lemb
 velocidade = 28        # colunas por segundo ao rolar
 brilho = 100           # 10 a 100 (%)
 linha_mensagens = 1    # em qual linha aparecem as mensagens da API / Claude
+monitor = 0            # 0 = onde você arrastar; 1, 2... = monitor fixo (da esquerda para a direita)
+reservar_espaco = false # com posicao "topo" ou "base": janelas maximizadas não cobrem o painel
 
 # Cada [[linha]] é dividida em blocos lado a lado.
 # itens: relogio, data, sistema, cpu, ram, rede, historico, agenda, sessoes, limites,
@@ -48,6 +50,7 @@ atualizar_minutos = 10
 avisar_limite = [80, 95]     # pisca um aviso quando o uso de 5 h ou 7 dias passa destes %
 piscar_permissao = true      # pedido de permissão/pergunta do Claude pisca no painel
 esquecer_horas = 12          # some da lista a sessão sem sinal há mais que isso
+detalhar = true              # ao terminar, mostra o resumo do que o Claude fez (senão, só "terminou")
 "##;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -69,6 +72,10 @@ pub struct PanelCfg {
     pub velocidade: f32,
     pub brilho: u8,
     pub linha_mensagens: usize,
+    /// 0 = automático (fica onde for arrastado); 1, 2... = monitor fixo (da esquerda para a direita).
+    pub monitor: usize,
+    /// Com posição "topo" ou "base": reserva a faixa da tela, e janelas maximizadas não cobrem o painel.
+    pub reservar_espaco: bool,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
@@ -112,11 +119,12 @@ pub struct ClaudeCfg {
     pub avisar_limite: Vec<u32>,
     pub piscar_permissao: bool,
     pub esquecer_horas: u64,
+    pub detalhar: bool,
 }
 
 impl Default for ClaudeCfg {
     fn default() -> Self {
-        Self { avisar_limite: vec![80, 95], piscar_permissao: true, esquecer_horas: 12 }
+        Self { avisar_limite: vec![80, 95], piscar_permissao: true, esquecer_horas: 12, detalhar: true }
     }
 }
 
@@ -155,6 +163,8 @@ impl Default for PanelCfg {
             velocidade: 28.0,
             brilho: 100,
             linha_mensagens: 1,
+            monitor: 0,
+            reservar_espaco: false,
         }
     }
 }
@@ -189,6 +199,11 @@ impl PanelCfg {
 
     pub fn lines(&self) -> usize {
         self.linhas.clamp(1, 8)
+    }
+
+    /// Reserva a faixa da tela só faz sentido encostado no topo ou na base.
+    pub fn reserves_space(&self) -> bool {
+        self.reservar_espaco && matches!(self.posicao, Position::Topo | Position::Base)
     }
 
     pub fn message_line(&self) -> usize {

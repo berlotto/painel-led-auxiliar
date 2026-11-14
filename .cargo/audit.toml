@@ -1,0 +1,13 @@
+# Configuração do `cargo audit`.
+#
+# Avisos ignorados de propósito (revisar quando o ksni atualizar):
+# zbus_names, zvariant e zvariant_derive foram incorporados ao próprio zbus na versão 6 e por isso
+# estão marcados como "sem manutenção". Não são falhas de segurança. Eles vêm do zbus 5, usado pelo
+# ksni 0.3.7 (ícone da bandeja no Linux), e o ksni ainda não tem versão com zbus 6.
+# Só entram no build Linux.
+[advisories]
+ignore = [
+  "RUSTSEC-2026-0370", # zvariant: sem manutenção (incorporado ao zbus)
+  "RUSTSEC-2026-0371", # zbus_names: sem manutenção (incorporado ao zbus)
+  "RUSTSEC-2026-0372", # zvariant_derive: sem manutenção (incorporado ao zbus)
+]
